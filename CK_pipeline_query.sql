@@ -1,48 +1,11 @@
 -- ============================================================
 -- CK ANALYTICS PIPELINE — FINAL EXPORT QUERY
+-- Percentile is computed in the dashboard via normal CDF
+-- Z_SCORE column is the input for that calculation
+--
 -- Run in SSMS → Results to Grid → Right-click → Save As CSV
 -- File: CK_math_pipeline_data.csv
 -- Save to: C:\Users\houstonp\Desktop\CK-Analytics-DB\
--- ============================================================
--- TABLES USED:
---   dbo.PS_TKT_HIST     (ticket header)
---   dbo.PS_TKT_HIST_LIN (ticket line detail)
---   dbo.IM_INV           (current inventory snapshot)
---
--- JOIN KEY: PS_TKT_HIST.DOC_ID = PS_TKT_HIST_LIN.DOC_ID
---
--- FILTERS:
---   - Last 90 days (primary) + 12 months (velocity)
---   - Stores: exclude 'HQ' and '100'
---   - Line type: 'S' (sales only)
---   - 21 categories (excludes DRINKS and non-retail)
---
--- MATH:
---   - Log transform: LN(QTY_SOLD), zero/negative → 0
---   - Sub-category stdev: computed on LN_QTY per CATEG_COD + SUBCAT_COD
---   - Z-score: (LN_QTY - mean) / stdev, only when peer count >= 3
---   - Rank: z-score based (3+ peers) or qty based (under 3 peers)
---   - Percentile: PERCENT_RANK() within sub-category
---   - Velocity: % of 12-month sales occurring in last 90 days
---   - Status: ACTIVE / OUT OF STOCK / NOT SELLING
---
--- COLUMN MAPPING TO DASHBOARD:
---   ITEM_NO             → Item #
---   ITEM_NAME           → Item name
---   CATEG_COD           → Category
---   SUBCAT_COD          → Sub category
---   RAW_QTY_90D         → 90-day sales KPI
---   RAW_AMT_90D         → 90-day sales $ KPI
---   RAW_QTY_12M_TOTAL   → 12-month sales total
---   PCT_RECENT          → Velocity indicator (25% = steady)
---   Z_SCORE             → Backend math (not displayed)
---   RANK_METHOD         → Z-SCORE or QTY-RANK
---   SUBCAT_RANK         → "X out of Y" rank badge
---   PERCENTILE          → "top X%" badge
---   SUBCAT_TOTAL        → Peer count for "X out of Y"
---   QTY_AVAIL_ALL_STORES→ Inventory grid
---   STORES_WITH_STOCK   → Inventory grid
---   STATUS              → ACTIVE / OUT OF STOCK / NOT SELLING
 -- ============================================================
 
 DECLARE @DATE_START_90 DATE = DATEADD(DAY, -90, CAST(GETDATE() AS DATE));
@@ -156,11 +119,9 @@ scored AS (
         i.STORE_COUNT,
         i.LN_QTY,
 
-        -- 12-month totals
         ISNULL(m.RAW_QTY_12M, 0) + i.RAW_QTY_90D         AS RAW_QTY_12M_TOTAL,
         ISNULL(m.RAW_AMT_12M, 0) + i.RAW_AMT_90D         AS RAW_AMT_12M_TOTAL,
 
-        -- Velocity: % of 12-month sales in last 90 days
         CASE
             WHEN (ISNULL(m.RAW_QTY_12M, 0) + i.RAW_QTY_90D) > 0
             THEN ROUND(
@@ -170,31 +131,26 @@ scored AS (
             ELSE 0
         END                                                AS PCT_RECENT,
 
-        -- Sub-category stats
         s.PEER_COUNT,
         s.SUBCAT_MEAN_LN,
         s.SUBCAT_STDEV_LN,
 
-        -- Z-score
         CASE
             WHEN s.PEER_COUNT >= 3 AND s.SUBCAT_STDEV_LN > 0
             THEN ROUND((i.LN_QTY - s.SUBCAT_MEAN_LN) / s.SUBCAT_STDEV_LN, 4)
             ELSE NULL
         END                                                AS Z_SCORE,
 
-        -- Ranking method
         CASE
             WHEN s.PEER_COUNT >= 3 AND s.SUBCAT_STDEV_LN > 0
             THEN 'Z-SCORE'
             ELSE 'QTY-RANK'
         END                                                AS RANK_METHOD,
 
-        -- Inventory
         ISNULL(inv.QTY_AVAIL_ALL_STORES, 0)               AS QTY_AVAIL_ALL_STORES,
         ISNULL(inv.QTY_ON_HND_ALL_STORES, 0)              AS QTY_ON_HND_ALL_STORES,
         ISNULL(inv.STORES_WITH_STOCK, 0)                   AS STORES_WITH_STOCK,
 
-        -- Status
         CASE
             WHEN i.RAW_QTY_90D > 0 THEN 'ACTIVE'
             WHEN i.RAW_QTY_90D <= 0 AND ISNULL(inv.QTY_AVAIL_ALL_STORES, 0) <= 0
@@ -213,7 +169,19 @@ scored AS (
 )
 
 -- ============================================================
--- FINAL OUTPUT with rank + percentile
+-- FINAL OUTPUT
+-- Percentile is NOT computed here — use the Z_SCORE column
+-- in the dashboard with a normal CDF function:
+--   function normalCDF(z) {
+--     const a1=0.254829592, a2=-0.284496736, a3=1.421413741;
+--     const a4=-1.453152027, a5=1.061405429, p=0.3275911;
+--     const sign = z < 0 ? -1 : 1;
+--     const x = Math.abs(z) / Math.sqrt(2);
+--     const t = 1.0 / (1.0 + p * x);
+--     const y = 1-(((((a5*t+a4)*t)+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);
+--     return Math.round((0.5 * (1.0 + sign * y)) * 10000) / 100;
+--   }
+--   e.g. normalCDF(1.82) → 96.56
 -- ============================================================
 SELECT
     ITEM_NO,
@@ -246,23 +214,6 @@ SELECT
             ORDER BY RAW_QTY_90D DESC
         )
     END                                                    AS SUBCAT_RANK,
-
-    -- Percentile within sub-category
-    CASE
-        WHEN RANK_METHOD = 'Z-SCORE'
-        THEN ROUND(
-            PERCENT_RANK() OVER (
-                PARTITION BY CATEG_COD, SUBCAT_COD
-                ORDER BY Z_SCORE ASC
-            ) * 100, 1
-        )
-        ELSE ROUND(
-            PERCENT_RANK() OVER (
-                PARTITION BY CATEG_COD, SUBCAT_COD
-                ORDER BY RAW_QTY_90D ASC
-            ) * 100, 1
-        )
-    END                                                    AS PERCENTILE,
 
     PEER_COUNT                                             AS SUBCAT_TOTAL,
     QTY_AVAIL_ALL_STORES,
