@@ -1001,12 +1001,13 @@ function renderItem(item) {
     `${item.STORES_WITH_STOCK || 0} stores with stock`;
 
   // ── RANK STRIP ───────────────────────────────────────────────
+  const topPctStrip = Math.round((100 - pctR) * 10) / 10;
   document.getElementById('rank-main').innerHTML =
     `Sub-category rank: <strong>${rankNum}</strong> of <strong>${rankTotal}</strong>`
-    + ` — outperforms <span class="rank-pct">${pctR}%</span> of ${item.SUBCAT_COD} items`;
+    + ` — <span class="rank-pct">Top ${topPctStrip}%</span> of ${item.SUBCAT_COD} items`;
   document.getElementById('rank-method').textContent = `Percentile method: ${method}`;
   document.getElementById('rank-bar').style.width     = `${Math.min(100, pctR)}%`;
-  document.getElementById('rank-bar-lbl').textContent = `${pctR}%`;
+  document.getElementById('rank-bar-lbl').textContent = `Top ${topPctStrip}%`;
 
   // ── CHARTS ──────────────────────────────────────────────────
   renderCharts(item, qty90, amt90);
