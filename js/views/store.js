@@ -56,6 +56,7 @@ function renderStoreOverview() {
   list = [...list].sort((a, b) => {
     const dir = storeSortDir === 'asc' ? 1 : -1;
     switch (storeSortCol) {
+      case 'storeno': return dir * ((parseFloat(a.STR_ID) || 0) - (parseFloat(b.STR_ID) || 0));
       case 'store':   return dir * ((a.STORE_NAME || '').localeCompare(b.STORE_NAME || ''));
       case 'city':    return dir * ((a.CITY || '').localeCompare(b.CITY || ''));
       case 'state':   return dir * ((a.STATE || '').localeCompare(b.STATE || ''));
@@ -71,7 +72,8 @@ function renderStoreOverview() {
   });
 
   const cols = [
-    { key: 'store',   label: 'Store' },
+    { key: 'storeno', label: 'Store #',       cls: 'num-ctr' },
+    { key: 'store',   label: 'Store Name' },
     { key: 'city',    label: 'City' },
     { key: 'state',   label: 'State',         cls: 'num-ctr' },
     { key: 'tier',    label: 'Tier',           cls: 'num-ctr' },
@@ -96,8 +98,10 @@ function renderStoreOverview() {
     const velArr = vel >= 30 ? '↑' : vel < 20 ? '↓' : '→';
     const tier   = (s.STORE_TIER || '').toUpperCase();
     const tierBadge = `<span class="tier-badge tier-${tier.toLowerCase()}">${tier}</span>`;
+    const cleanName = (s.STORE_NAME || '').replace(/^\d+\s*[-–—]+\s*/, '').trim();
     return `<tr onclick="storeZoom('${String(s.STR_ID).trim()}')">
-      <td class="store-name-cell"><strong>${s.STR_ID} — ${s.STORE_NAME}</strong></td>
+      <td class="num-ctr" style="font-weight:600">${s.STR_ID || '—'}</td>
+      <td class="store-name-cell"><strong>${cleanName || s.STORE_NAME}</strong></td>
       <td>${s.CITY || '—'}</td>
       <td class="num-ctr">${s.STATE || '—'}</td>
       <td class="num-ctr">${tierBadge}</td>
@@ -345,6 +349,7 @@ function storeZoom(strId) {
 function renderStoreDetail(s) {
   destroyStoreCharts();
 
+  const cleanStoreName = (s.STORE_NAME || '').replace(/^\d+\s*[-–—]+\s*/, '').trim() || s.STORE_NAME;
   const vel    = parseFloat(s.PCT_RECENT) || 0;
   const velCls = vel >= 30 ? 'vel-up' : vel < 20 ? 'vel-down' : 'vel-ss';
   const velArr = vel >= 30 ? '↑' : vel < 20 ? '↓' : '→';
@@ -369,11 +374,11 @@ function renderStoreDetail(s) {
     <div class="cat-nav-breadcrumb">
       <a class="cat-back-link" onclick="renderStoreOverview()">← Back to all stores</a>
       <span style="color:#9ca3af;margin:0 8px">/</span>
-      <span style="color:#1a2332;font-weight:600">${s.STORE_NAME}</span>
+      <span style="color:#1a2332;font-weight:600">${cleanStoreName}</span>
     </div>
     <div class="item-header-card">
       <div class="hdr-row1">
-        <div class="hdr-name">${s.STORE_NAME}</div>
+        <div class="hdr-name">${cleanStoreName}</div>
         <span class="hdr-badge">#${s.STR_ID}</span>
         <span class="tier-badge tier-${tier.toLowerCase()}" style="font-size:13px;padding:4px 12px">${tier}</span>
       </div>
