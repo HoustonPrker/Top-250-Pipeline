@@ -15,6 +15,12 @@ let activeTab       = 'item';
 // ── Tab switching ─────────────────────────────────────────────
 
 function switchTab(tab) {
+  // Destroy all charts from every tab before switching to prevent
+  // "Canvas is already in use" errors from Chart.js
+  destroyCharts();
+  if (typeof destroyCatCharts   === 'function') destroyCatCharts();
+  if (typeof destroyStoreCharts === 'function') destroyStoreCharts();
+
   activeTab = tab;
 
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));

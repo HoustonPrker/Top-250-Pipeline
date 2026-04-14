@@ -302,14 +302,6 @@ function showCategoryDetail(catName) {
     }
   });
 
-  // Chart: cap at 12 sub-categories
-  const chartData  = [...subcatList].sort((a, b) => b.rev - a.rev);
-  const chartItems = chartData.slice(0, 12);
-  const chartNote  = chartData.length > 12
-    ? `<div class="subcat-chart-note">Showing top 12 of ${chartData.length} sub-categories by revenue. Full list in table below.</div>`
-    : '';
-  const chartH = Math.min(400, Math.max(180, chartItems.length * 32));
-
   document.getElementById('cat-view-content').innerHTML = `
     <div class="cat-nav-breadcrumb">
       <a class="cat-back-link" onclick="renderCatOverview()">← All Categories</a>
@@ -325,25 +317,14 @@ function showCategoryDetail(catName) {
       <span class="cat-stat-sep">·</span>
       <div class="cat-stat-item"><span class="cat-stat-lbl">30D Revenue:</span><span class="cat-stat-val">${fmtRevMM(catRev30)}</span></div>
     </div>
-    <div class="subcat-detail-layout">
-      <div class="chart-panel subcat-chart-panel">
-        <div class="chart-panel-title">Sub-Category Revenue (90D)</div>
-        ${chartNote}
-        <div class="chart-container" style="height:${chartH}px"><canvas id="subcat-bar-chart"></canvas></div>
-      </div>
-      <div class="subcat-table-panel">
-        <input class="subcat-filter-input" id="subcat-filter" placeholder="Filter sub-categories…"
-               oninput="filterSubcatTable(this.value)" value="${subcatFilterVal}">
-        <div class="inv-wrap">
-          <table class="data-table" id="subcat-detail-table">
-            <thead><tr>${buildSubcatThead(catName)}</tr></thead>
-            <tbody id="subcat-detail-tbody">${buildSubcatTbody(subcatList, catName)}</tbody>
-          </table>
-        </div>
-      </div>
+    <input class="subcat-filter-input" id="subcat-filter" placeholder="Filter sub-categories…"
+           oninput="filterSubcatTable(this.value)" value="${subcatFilterVal}">
+    <div class="inv-wrap" style="margin-top:8px">
+      <table class="data-table" id="subcat-detail-table">
+        <thead><tr>${buildSubcatThead(catName)}</tr></thead>
+        <tbody id="subcat-detail-tbody">${buildSubcatTbody(subcatList, catName)}</tbody>
+      </table>
     </div>`;
-
-  setTimeout(() => renderSubcatChart(chartItems), 0);
 }
 
 function buildSubcatThead(catName) {
@@ -410,83 +391,6 @@ function filterSubcatTable(val) {
   });
 }
 
-function renderSubcatChart(chartItems) {
-  const sorted = [...chartItems].sort((a, b) => b.rev - a.rev);
-  const barColors = sorted.map(s =>
-    s.vel > 35 ? '#16a34a' : s.vel >= 25 ? '#d97706' : '#dc2626'
-  );
-
-  const ctx = document.getElementById('subcat-bar-chart');
-  if (!ctx) return;
-
-  catViewCharts.subcatBar = new Chart(ctx.getContext('2d'), {
-    type: 'bar',
-    data: {
-      labels: sorted.map(s => s.name),
-      datasets: [{
-        data: sorted.map(s => s.rev),
-        backgroundColor: barColors,
-        borderWidth: 0,
-        borderRadius: 3
-      }]
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#fff',
-          titleColor: '#1a2332',
-          bodyColor: '#374151',
-          borderColor: '#e5e7eb',
-          borderWidth: 1,
-          padding: 10,
-          titleFont: { family: 'Inter, sans-serif', size: 12, weight: '600' },
-          bodyFont: { family: 'Inter, sans-serif', size: 12 },
-          callbacks: { label: ctx => ` ${fmtRevMM(ctx.parsed.x)}` }
-        },
-        // Revenue labels at end of each bar
-        datalabels: false
-      },
-      scales: {
-        x: {
-          ticks: {
-            font: { size: 11, family: 'Inter, sans-serif' },
-            color: '#6b7280',
-            callback: v => fmtRevAxis(v)
-          },
-          grid: { color: 'rgba(0,0,0,0.04)' }
-        },
-        y: {
-          ticks: { font: { size: 11, family: 'Inter, sans-serif' }, color: '#374151' },
-          grid: { display: false }
-        }
-      },
-      animation: {
-        onComplete: function() {
-          const chart = this;
-          const ctx2  = chart.ctx;
-          ctx2.save();
-          ctx2.font = '11px Inter, sans-serif';
-          ctx2.fillStyle = '#374151';
-          ctx2.textBaseline = 'middle';
-          chart.data.datasets[0].data.forEach((val, i) => {
-            const meta = chart.getDatasetMeta(0);
-            const bar  = meta.data[i];
-            if (!bar) return;
-            const x = bar.x + 6;
-            const y = bar.y;
-            ctx2.fillText(fmtRevAxis(val), x, y);
-          });
-          ctx2.restore();
-        }
-      }
-    }
-  });
-}
-
 function subcatDetailSortBy(catName, col) {
   if (subcatSortCol === col) {
     subcatSortDir = subcatSortDir === 'desc' ? 'asc' : 'desc';
@@ -521,6 +425,8 @@ function toggleSubcatAccordion(safeId, catName, subcatName) {
   }
 }
 
+const ACC_PAGE_SIZE = 50;
+
 function buildAccordionItems(container, catName, subcatName) {
   const items = pipelineData.filter(
     i => i.CATEG_COD === catName && i.SUBCAT_COD === subcatName
@@ -533,31 +439,9 @@ function buildAccordionItems(container, catName, subcatName) {
 
   withPct.sort((a, b) => b.pct - a.pct);
 
-  const rows = withPct.map(({ item, pct }) => {
-    const pctR     = Math.round(pct * 10) / 10;
-    const pctCls   = pct >= 75 ? 'pct-green' : pct >= 25 ? 'pct-yellow' : 'pct-red';
-    const sparkCls = pct >= 75 ? 'spark-green' : pct >= 25 ? 'spark-yellow' : 'spark-red';
-    const velCls   = (parseFloat(item.PCT_RECENT) || 0) >= 35 ? 'vel-up'
-                   : (parseFloat(item.PCT_RECENT) || 0) >= 25 ? 'vel-ss' : 'vel-down';
-    const velArrow = (parseFloat(item.PCT_RECENT) || 0) >= 35 ? '↑'
-                   : (parseFloat(item.PCT_RECENT) || 0) >= 25 ? '→' : '↓';
-    const status   = (item.STATUS || '').trim().toUpperCase();
-    const stsCls   = status === 'ACTIVE' ? 'sts-active' : status === 'OUT OF STOCK' ? 'sts-oos' : 'sts-ns';
-    const stsLbl   = status === 'ACTIVE' ? 'Active' : status === 'OUT OF STOCK' ? 'OOS' : 'Not Selling';
-
-    return `<tr onclick="zoomToItem('${(item.ITEM_NO||'').replace(/'/g,"\\'")}')">
-      <td><a class="item-link" title="Open in Item Zoom">${item.ITEM_NO || '—'}</a></td>
-      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${item.ITEM_NAME || '—'}</td>
-      <td class="num">
-        <span class="pct-badge ${pctCls}" style="font-size:14px;font-weight:700">${pctR}%</span>
-        <div class="pct-spark"><div class="pct-spark-fill ${sparkCls}" style="width:${Math.min(100, pctR)}%"></div></div>
-      </td>
-      <td class="num">${fmtQty(item.RAW_QTY_90D)}</td>
-      <td class="num">${fmt$(item.RAW_AMT_90D)}</td>
-      <td class="num"><span class="${velCls}">${velArrow}</span> ${parseFloat(item.PCT_RECENT)||0}%</td>
-      <td><span class="${stsCls}">${stsLbl}</span></td>
-    </tr>`;
-  }).join('');
+  // Store full sorted list on container for "show more"
+  container._allRows = withPct;
+  container._shownCount = 0;
 
   container.innerHTML = `
     <table class="items-inner-table">
@@ -572,8 +456,63 @@ function buildAccordionItems(container, catName, subcatName) {
           <th>Status</th>
         </tr>
       </thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+      <tbody id="acc-tbody-${container.id}"></tbody>
+    </table>
+    <div id="acc-footer-${container.id}" class="acc-pagination-footer"></div>`;
+
+  appendAccordionRows(container, ACC_PAGE_SIZE);
+}
+
+function makeAccordionRow({ item, pct }) {
+  const pctR     = Math.round(pct * 10) / 10;
+  const pctCls   = pct >= 75 ? 'pct-green' : pct >= 25 ? 'pct-yellow' : 'pct-red';
+  const sparkCls = pct >= 75 ? 'spark-green' : pct >= 25 ? 'spark-yellow' : 'spark-red';
+  const velCls   = (parseFloat(item.PCT_RECENT) || 0) >= 35 ? 'vel-up'
+                 : (parseFloat(item.PCT_RECENT) || 0) >= 25 ? 'vel-ss' : 'vel-down';
+  const velArrow = (parseFloat(item.PCT_RECENT) || 0) >= 35 ? '↑'
+                 : (parseFloat(item.PCT_RECENT) || 0) >= 25 ? '→' : '↓';
+  const status   = (item.STATUS || '').trim().toUpperCase();
+  const stsCls   = status === 'ACTIVE' ? 'sts-active' : status === 'OUT OF STOCK' ? 'sts-oos' : 'sts-ns';
+  const stsLbl   = status === 'ACTIVE' ? 'Active' : status === 'OUT OF STOCK' ? 'OOS' : 'Not Selling';
+  return `<tr onclick="zoomToItem('${(item.ITEM_NO||'').replace(/'/g,"\\'")}')">
+    <td><a class="item-link" title="Open in Item Zoom">${item.ITEM_NO || '—'}</a></td>
+    <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${item.ITEM_NAME || '—'}</td>
+    <td class="num">
+      <span class="pct-badge ${pctCls}" style="font-size:14px;font-weight:700">${pctR}%</span>
+      <div class="pct-spark"><div class="pct-spark-fill ${sparkCls}" style="width:${Math.min(100, pctR)}%"></div></div>
+    </td>
+    <td class="num">${fmtQty(item.RAW_QTY_90D)}</td>
+    <td class="num">${fmt$(item.RAW_AMT_90D)}</td>
+    <td class="num"><span class="${velCls}">${velArrow}</span> ${parseFloat(item.PCT_RECENT)||0}%</td>
+    <td><span class="${stsCls}">${stsLbl}</span></td>
+  </tr>`;
+}
+
+function appendAccordionRows(container, count) {
+  const all    = container._allRows;
+  const start  = container._shownCount;
+  const end    = Math.min(start + count, all.length);
+  const tbody  = document.getElementById('acc-tbody-' + container.id);
+  const footer = document.getElementById('acc-footer-' + container.id);
+  if (!tbody) return;
+
+  const chunk = all.slice(start, end).map(makeAccordionRow).join('');
+  tbody.insertAdjacentHTML('beforeend', chunk);
+  container._shownCount = end;
+
+  const remaining = all.length - end;
+  if (footer) {
+    if (remaining > 0) {
+      footer.innerHTML = `<div class="acc-pagination-bar">
+        Showing <strong>${end}</strong> of <strong>${all.length}</strong> items &nbsp;·&nbsp;
+        <button class="btn btn-ghost btn-sm" onclick="appendAccordionRows(this.closest('.acc-content'), ${ACC_PAGE_SIZE})">Show next ${Math.min(ACC_PAGE_SIZE, remaining)}</button>
+        &nbsp;
+        <button class="btn btn-ghost btn-sm" onclick="appendAccordionRows(this.closest('.acc-content'), ${all.length})">Load all</button>
+      </div>`;
+    } else {
+      footer.innerHTML = `<div class="acc-pagination-bar" style="color:#9ca3af">Showing all <strong>${all.length}</strong> items</div>`;
+    }
+  }
 }
 
 // ── Navigate to item zoom from category ───────────────────────
