@@ -934,10 +934,28 @@ async function init() {
     var result = await DataLoader.loadAll();
     pipelineData = result.pipeline;
     normalityMap = result.normality;
-    updateNavStat();
-    showScreen('welcome-screen');
-    document.getElementById('item-search').focus();
+    try {
+      updateNavStat();
+      showScreen('welcome-screen');
+      document.getElementById('item-search').focus();
+      // Read hash to determine initial view; default to item 4000
+      var hash  = (location.hash || '').replace('#', '').trim();
+      var parts = hash.split('/');
+      var initTab = parts[0] || 'item';
+      if (initTab === 'category') {
+        switchTab('category');
+        if (parts[1]) { showCategoryDetail(parts[1]); if (parts[2]) showSubcatItems(parts[2]); }
+      } else if (initTab === 'store') {
+        switchTab('store');
+      } else {
+        var initItem = parts[1] || '4000';
+        doSearch(initItem);
+      }
+    } catch(uiErr) {
+      console.error('[CK] UI transition error after data load:', uiErr);
+    }
   } catch(e) {
+    console.error('[CK] Data load failed, showing file picker:', e);
     fileMode = true;
     showScreen('picker-screen');
   }
@@ -1014,9 +1032,11 @@ function processFromText(pText, nText) {
       updateNavStat();
       showScreen('welcome-screen');
       document.getElementById('item-search').focus();
+      doSearch('4000');
     } catch(err) {
+      console.error('[CK] processFromText error:', err);
       var msg = document.getElementById('load-msg');
-      msg.textContent = '❌ Error: ' + err.message;
+      msg.textContent = '\u274C Error: ' + err.message;
       msg.style.color = '#dc2626';
     }
   }, 20);
@@ -1025,8 +1045,9 @@ function processFromText(pText, nText) {
 // ─────────────────────────────────────────────────────────
 // SEARCH
 // ─────────────────────────────────────────────────────────
-function doSearch() {
-  var q = document.getElementById('item-search').value.trim().toUpperCase();
+function doSearch(itemNo) {
+  var q = (itemNo ? String(itemNo) : document.getElementById('item-search').value).trim().toUpperCase();
+  if (itemNo) document.getElementById('item-search').value = q;
   if (!q) return;
   if (!pipelineData.length) { alert('Data is still loading — please wait.'); return; }
   var item = pipelineData.find(function(i){ return (i.ITEM_NO || '').trim().toUpperCase() === q; });
@@ -1252,7 +1273,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('item-search').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') doSearch();
   });
-  init().then(handleHash);
+  init(); // hash routing handled inside init() after data loads
   window.addEventListener('hashchange', handleHash);
 });
 
