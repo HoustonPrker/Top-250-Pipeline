@@ -274,12 +274,8 @@ function showCategoryDetail(catName) {
     const rev  = sub.items.reduce((s, i) => s + (parseFloat(i.RAW_AMT_90D) || 0), 0);
     const qty  = sub.items.reduce((s, i) => s + (parseFloat(i.RAW_QTY_90D) || 0), 0);
     const vel  = sub.items.reduce((s, i) => s + (parseFloat(i.PCT_RECENT)  || 0), 0) / sub.items.length;
-    // 30D revenue: sum from daily sales if available, else estimate
-    const rev30 = sub.items.reduce((s, i) => {
-      const d = getDailySalesForItem(i.ITEM_NO);
-      const amt = d.amt.slice(-30).reduce((a, b) => a + b, 0);
-      return s + (amt > 0 ? amt : (parseFloat(i.RAW_AMT_90D) || 0) / 3);
-    }, 0);
+    // 30D revenue: estimated as 90D / 3
+    const rev30 = rev / 3;
     const normKey = `${catName}|${sub.name}`;
     const norm    = normalityMap[normKey];
     return { name: sub.name, items: sub.items, itemCount: sub.items.length, rev, qty, vel, rev30, norm };

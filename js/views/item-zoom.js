@@ -3,7 +3,7 @@
 // Uses globals: pipelineData, normalityMap, dataReady, activeCharts
 // ============================================================
 
-function doSearch(prefill) {
+async function doSearch(prefill) {
   if (prefill !== undefined) document.getElementById('item-search').value = prefill;
   const q = document.getElementById('item-search').value.trim().toUpperCase();
   if (!q) return;
@@ -22,6 +22,9 @@ function doSearch(prefill) {
     show('error-view');
     return;
   }
+
+  // Fetch daily sales from API if not already cached
+  await fetchDailySalesForItem(item.ITEM_NO);
 
   renderItem(item);
 }
