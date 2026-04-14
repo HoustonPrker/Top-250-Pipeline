@@ -121,18 +121,14 @@ input[type=file] { width: 100%; font-family: inherit; font-size: 13px; border: 1
 
 /* ── ITEM HEADER CARD ─────────────────────── */
 .item-header-card { background: #3d5a80; color: #fff; border-radius: 8px; padding: 18px 24px; margin-bottom: 12px; }
-.hdr-two-col { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; }
-.hdr-left { display: flex; flex-direction: column; justify-content: center; }
-.hdr-name { font-size: 26px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; line-height: 1.2; }
-.hdr-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 260px; }
-.hdr-badges { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.hdr-name { font-size: 32px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; line-height: 1.2; margin-bottom: 10px; }
+.hdr-meta-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .hdr-badge { font-size: 13px; font-weight: 500; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25); border-radius: 6px; padding: 4px 12px; white-space: nowrap; }
 .hdr-rank-badge { background: #16a34a; border: none; border-radius: 6px; padding: 4px 12px; font-size: 13px; font-weight: 600; white-space: nowrap; }
-.hdr-meta { display: flex; flex-direction: column; gap: 3px; text-align: right; }
-.hdr-field { display: flex; gap: 6px; align-items: center; justify-content: flex-end; font-size: 13px; color: rgba(255,255,255,0.82); }
+.hdr-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; background: rgba(255,255,255,0.1); border-radius: 6px; padding: 4px 12px; white-space: nowrap; }
 .hdr-lbl { opacity: 0.6; font-size: 12px; }
 .hdr-val { font-weight: 600; }
-.hdr-cat-link { font-size: 13px; color: rgba(255,255,255,0.7); text-decoration: none; font-weight: 500; cursor: pointer; white-space: nowrap; transition: color 0.15s; }
+.hdr-cat-link { font-size: 13px; color: rgba(255,255,255,0.7); text-decoration: none; font-weight: 500; cursor: pointer; white-space: nowrap; transition: color 0.15s; margin-left: 4px; }
 .hdr-cat-link:hover { color: #fff; text-decoration: underline; }
 
 /* ── KPI CARDS ────────────────────────────── */

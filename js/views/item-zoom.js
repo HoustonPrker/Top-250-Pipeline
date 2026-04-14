@@ -47,7 +47,6 @@ function renderItem(item) {
   document.getElementById('h-itemno').textContent = `#${item.ITEM_NO}`;
   document.getElementById('h-categ').textContent  = item.CATEG_COD || '—';
   document.getElementById('h-subcat').textContent = item.SUBCAT_COD || '—';
-  document.getElementById('h-method').textContent = item.RANK_METHOD || '—';
   document.getElementById('h-peers').textContent  = item.PEER_COUNT || '—';
 
   const rankNum   = parseInt(item.SUBCAT_RANK)  || 0;
