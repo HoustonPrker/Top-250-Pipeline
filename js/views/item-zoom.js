@@ -3,10 +3,14 @@
 // Uses globals: pipelineData, normalityMap, dataReady, activeCharts
 // ============================================================
 
-function doSearch() {
+function doSearch(prefill) {
+  if (prefill !== undefined) document.getElementById('item-search').value = prefill;
   const q = document.getElementById('item-search').value.trim().toUpperCase();
   if (!q) return;
   if (!dataReady) { alert('Data is still loading — please wait.'); return; }
+
+  // Always switch to Item Zoom tab before showing the result
+  switchTab('item');
 
   const item = pipelineData.find(i => (i.ITEM_NO || '').trim().toUpperCase() === q);
 

@@ -77,17 +77,22 @@ function renderCatOverview() {
     return `<th class="${cls}" onclick="catSortBy('${c.key}')">${c.label}<span class="sort-icon">${icon}</span></th>`;
   }).join('');
 
-  const tbody = catList.map(c => {
-    const velCls   = c.vel >= 30 ? 'vel-up' : c.vel < 20 ? 'vel-down' : 'vel-ss';
-    const velArrow = c.vel >= 30 ? '↑'      : c.vel < 20 ? '↓'        : '→';
-    return `<tr onclick="showCategoryDetail('${c.name.replace(/'/g, "\\'")}')">
-      <td><strong>${c.name}</strong></td>
+  const tbody = catList.map((c, idx) => {
+    const velCls      = c.vel >= 30 ? 'vel-up' : c.vel < 20 ? 'vel-down' : 'vel-ss';
+    const velArrow    = c.vel >= 30 ? '↑'      : c.vel < 20 ? '↓'        : '→';
+    const trendPct    = c.itemCount > 0 ? Math.round((c.trendUp / c.itemCount) * 100) : 0;
+    const trendTip    = `${c.trendUp} of ${c.itemCount} items trending up`;
+    const isTop5      = idx < 5;
+    const isGroupEnd  = (idx + 1) % 5 === 0 && idx !== catList.length - 1;
+    const rowCls      = [isTop5 ? 'cat-top5' : '', isGroupEnd ? 'cat-group-end' : ''].filter(Boolean).join(' ');
+    return `<tr class="${rowCls}" onclick="showCategoryDetail('${c.name.replace(/'/g, "\\'")}')">
+      <td class="cat-name-cell"><strong>${c.name}</strong></td>
       <td class="num">${c.itemCount.toLocaleString()}</td>
       <td class="num">${c.subcats}</td>
       <td class="num">${fmtQty(c.qty)}</td>
       <td class="num">${fmtRevMM(c.rev)}</td>
       <td class="num"><span class="${velCls}">${velArrow}</span> ${c.vel.toFixed(1)}%</td>
-      <td class="num">${c.trendUp} <span style="color:#9ca3af;font-size:10px">of ${c.itemCount}</span></td>
+      <td class="num" title="${trendTip}">${trendPct}% <span class="vel-up" style="font-size:11px">&#8593;</span></td>
     </tr>`;
   }).join('');
 

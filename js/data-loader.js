@@ -130,10 +130,10 @@ function processData(pText, nText) {
       document.getElementById('welcome-data-msg').textContent =
         `${pipelineData.length.toLocaleString()} items · ${subcatCount} sub-categories · ${normCount} normality records loaded.`;
 
-      // Show main app
+      // Show main app then auto-load item 4000
       hide('loading-screen');
       document.getElementById('app-content').style.display = 'flex';
-      show('welcome-screen');
+      doSearch('4000');
 
     } catch (err) {
       document.getElementById('load-msg').textContent = '❌ Error: ' + err.message;
