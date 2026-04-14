@@ -1,2 +1,0 @@
-﻿-- CATEGORY SUMMARY - Aggregated by category/subcategory
--- TODO: Group pipeline data, save to data/CK_category_summary.csv

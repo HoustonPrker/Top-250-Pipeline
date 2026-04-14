@@ -1,2 +1,0 @@
-﻿-- DAILY SALES - Per-item daily breakdown for trend charts
--- TODO: Write query, save to data/CK_daily_sales.csv
