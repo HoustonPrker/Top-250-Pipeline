@@ -119,7 +119,7 @@ function renderCharts(item, qty90, amt90) {
     document.getElementById('chart-compare').getContext('2d'), {
     type: 'bar',
     data: {
-      labels: ['Actual 90D', 'Expected (12M÷4)'],
+      labels: ['Actual 90D', 'Projected'],
       datasets: [{
         data: [qty90, Math.round(expected)],
         backgroundColor: [velColor, '#d1d5db'],

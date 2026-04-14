@@ -37,7 +37,7 @@ function clearView() {
 function renderItem(item) {
   destroyCharts();
 
-  const { pct, method } = computePercentile(item);
+  const { pct } = computePercentile(item);
   const pctR = Math.round(pct * 10) / 10;
 
   show('item-view');
@@ -61,8 +61,6 @@ function renderItem(item) {
 
   document.getElementById('k-qty90').textContent = fmtQty(qty90);
   document.getElementById('k-amt90').textContent = fmt$(amt90);
-  document.getElementById('k-txn').textContent   =
-    `${item.TXN_COUNT || 0} transactions · ${item.STORE_COUNT || 0} stores`;
 
   document.getElementById('k-qty30').textContent = fmtQty(qty90 / 3);
   document.getElementById('k-amt30').textContent = fmt$(amt90 / 3);
@@ -90,15 +88,12 @@ function renderItem(item) {
     `<span class="${stsCls}" style="font-size:14px">${stsLbl}</span>`;
   document.getElementById('k-stock').textContent =
     `${fmtQty(item.QTY_AVAIL_ALL_STORES)} units available`;
-  document.getElementById('k-stock-note').textContent =
-    `${item.STORES_WITH_STOCK || 0} stores with stock`;
 
   // ── RANK STRIP ───────────────────────────────────────────────
   const topPctStrip = Math.round((100 - pctR) * 10) / 10;
   document.getElementById('rank-main').innerHTML =
     `Sub-category rank: <strong>${rankNum}</strong> of <strong>${rankTotal}</strong>`
     + ` — <span class="rank-pct">Top ${topPctStrip}%</span> of ${item.SUBCAT_COD} items`;
-  document.getElementById('rank-method').textContent = `Percentile method: ${method}`;
   document.getElementById('rank-bar').style.width     = `${Math.min(100, pctR)}%`;
   document.getElementById('rank-bar-lbl').textContent = `Top ${topPctStrip}%`;
 
