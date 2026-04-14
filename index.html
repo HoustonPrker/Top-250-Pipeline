@@ -1537,8 +1537,8 @@ function showSubcatItems(subcatName) {
     var tr = document.createElement('tr');
     tr.innerHTML =
       '<td class="num">' + (item.SUBCAT_RANK || '—') + '</td>' +
-      '<td><a href="#" class="item-link" onclick="zoomToItem('' + iNo.replace(/'/g,"\'") + ''); return false;">' + iNo + '</a></td>' +
-      '<td><a href="#" class="item-link" onclick="zoomToItem('' + iNo.replace(/'/g,"\'") + ''); return false;">' + iName + '</a></td>' +
+      '<td><a href="#" class="item-link" data-item="' + iNo + '" onclick="zoomToItem(this.dataset.item); return false;">' + iNo + '</a></td>' +
+      '<td><a href="#" class="item-link" data-item="' + iNo + '" onclick="zoomToItem(this.dataset.item); return false;">' + iName + '</a></td>' +
       '<td class="num">' + Math.round(qty90).toLocaleString() + '</td>' +
       '<td class="num">' + fmtAmt(amt90) + '</td>' +
       '<td class="num">' + zVal + '</td>' +
