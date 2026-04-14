@@ -5,6 +5,7 @@
 
 let pipelineData = [];
 let normalityMap = {};
+let storeData    = [];
 let dataReady    = false;
 let activeCharts = {};
 let activeTab    = 'item';
@@ -31,6 +32,13 @@ function switchTab(tab) {
 
 document.getElementById('item-search').addEventListener('keydown', e => {
   if (e.key === 'Enter') doSearch();
+});
+
+window.addEventListener('popstate', () => {
+  const hash = window.location.hash;
+  if (hash.startsWith('#store') && activeTab === 'store' && dataReady) {
+    renderStoreView();
+  }
 });
 
 // ── Boot ──────────────────────────────────────────────────────

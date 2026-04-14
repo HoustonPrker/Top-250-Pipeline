@@ -46,6 +46,7 @@ function onFileChosen() { /* no-op — files read on Load Data click */ }
 function loadFromFiles() {
   var pInput = document.getElementById('fp-pipeline');
   var nInput = document.getElementById('fp-normality');
+  var sInput = document.getElementById('fp-store');
 
   if (!pInput.files || !pInput.files[0]) {
     alert('Please select the Pipeline Data CSV file first.');
@@ -55,14 +56,19 @@ function loadFromFiles() {
     alert('Please select the Normality Results CSV file first.');
     return;
   }
+  if (!sInput.files || !sInput.files[0]) {
+    alert('Please select the Store Data CSV file first.');
+    return;
+  }
 
   var pFile = pInput.files[0];
   var nFile = nInput.files[0];
+  var sFile = sInput.files[0];
   var results = {};
 
   function tryProcess() {
-    if (results.pipeline !== undefined && results.normality !== undefined) {
-      processData(results.pipeline, results.normality);
+    if (results.pipeline !== undefined && results.normality !== undefined && results.store !== undefined) {
+      processData(results.pipeline, results.normality, results.store);
     }
   }
 
@@ -75,6 +81,11 @@ function loadFromFiles() {
   r2.onload = function(e) { results.normality = e.target.result; tryProcess(); };
   r2.onerror = function() { alert('Could not read normality CSV.'); };
   r2.readAsText(nFile);
+
+  var r3 = new FileReader();
+  r3.onload = function(e) { results.store = e.target.result; tryProcess(); };
+  r3.onerror = function() { alert('Could not read store CSV.'); };
+  r3.readAsText(sFile);
 }
 
 function showFilePicker() {
@@ -89,17 +100,18 @@ async function loadData() {
   show('loading-screen');
   document.getElementById('load-msg').textContent = 'Fetching CSV files…';
   try {
-    const [pText, nText] = await Promise.all([
+    const [pText, nText, sText] = await Promise.all([
       fetch('data/CK_math_pipeline_data.csv').then(r => { if (!r.ok) throw new Error(); return r.text(); }),
-      fetch('data/CK_normality_results.csv').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+      fetch('data/CK_normality_results.csv').then(r => { if (!r.ok) throw new Error(); return r.text(); }),
+      fetch('data/CK_store_data.csv').then(r => { if (!r.ok) throw new Error(); return r.text(); })
     ]);
-    processData(pText, nText);
+    processData(pText, nText, sText);
   } catch (_) {
     showFilePicker();
   }
 }
 
-function processData(pText, nText) {
+function processData(pText, nText, sText) {
   hide('file-picker');
   show('loading-screen');
   document.getElementById('load-msg').textContent = 'Parsing data…';
@@ -117,6 +129,11 @@ function processData(pText, nText) {
       }).data.forEach(r => {
         normalityMap[`${r.CATEG_COD}|${r.SUBCAT_COD}`] = r;
       });
+
+      storeData = Papa.parse(sText, {
+        header: true, skipEmptyLines: true,
+        transformHeader: h => h.trim().replace(/^\uFEFF/, '')
+      }).data;
 
       dataReady = true;
 

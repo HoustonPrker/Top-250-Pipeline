@@ -258,3 +258,15 @@ th.sort-th.sort-active .sort-icon { opacity: 1; }
 .cs-feature:last-child { border-bottom: none; }
 .cs-note { font-size: 13px; color: #9ca3af; font-style: italic; }
 .cs-note code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-family: 'SF Mono', Fira Code, monospace; font-style: normal; }
+
+/* ── STORE TIER BADGES ────────────────────── */
+.tier-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; text-transform: uppercase; white-space: nowrap; color: #fff; }
+.tier-high   { background: #16a34a; }
+.tier-medium { background: #3d5a80; }
+.tier-low    { background: #6b7280; }
+
+/* ── TIER FILTER BAR ──────────────────────── */
+.tier-filter-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+.tier-filter-btn { padding: 6px 16px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; color: #374151; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.15s, color 0.15s; }
+.tier-filter-btn:hover { background: #f0f4f8; }
+.tier-filter-btn.active { background: #3d5a80; color: #fff; border-color: #3d5a80; }
