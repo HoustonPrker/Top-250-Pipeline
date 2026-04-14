@@ -141,7 +141,7 @@ input[type=file] { width: 100%; font-family: inherit; font-size: 13px; border: 1
 .kpi-card-sales  { border-left-color: #16a34a; }
 .kpi-card-vel    { border-left-color: #d97706; }
 .kpi-card-status { border-left-color: #3d5a80; }
-.kpi-lbl  { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; margin-bottom: 8px; }
+.kpi-lbl  { font-size: 13px; color: #1a2332; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 8px; }
 .kpi-val  { font-size: 34px; font-weight: 700; color: #1a2332; line-height: 1; letter-spacing: -0.5px; }
 .kpi-sub  { font-size: 16px; color: #3d5a80; margin-top: 6px; font-weight: 500; }
 .kpi-note { font-size: 11px; color: #9ca3af; margin-top: 5px; }
@@ -155,7 +155,7 @@ input[type=file] { width: 100%; font-family: inherit; font-size: 13px; border: 1
 /* ── RANK STRIP ───────────────────────────── */
 .rank-strip { background: #3d5a80; border-radius: 8px; padding: 14px 20px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .rank-text   { flex: 1; min-width: 260px; }
-.rank-main   { font-size: 16px; color: #fff; font-weight: 600; }
+.rank-main   { font-size: 19px; color: #fff; font-weight: 600; }
 .rank-pct    { color: #86efac; font-size: 22px; font-weight: 700; }
 .rank-method { font-size: 12px; color: rgba(255,255,255,0.55); margin-top: 4px; }
 .rank-bar-wrap { position: relative; width: 220px; height: 20px; background: rgba(255,255,255,0.18); border-radius: 6px; overflow: hidden; }
