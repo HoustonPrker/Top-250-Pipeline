@@ -62,11 +62,18 @@ function renderItem(item) {
   document.getElementById('k-qty90').textContent = fmtQty(qty90);
   document.getElementById('k-amt90').textContent = fmt$(amt90);
 
-  document.getElementById('k-qty30').textContent = fmtQty(qty90 / 3);
-  document.getElementById('k-amt30').textContent = fmt$(amt90 / 3);
+  // Real 30D and 7D from daily sales data
+  const dailyData = getDailySalesForItem(item.ITEM_NO);
+  const qty30 = dailyData.qty.slice(-30).reduce((a, b) => a + b, 0);
+  const amt30 = dailyData.amt.slice(-30).reduce((a, b) => a + b, 0);
+  const qty7  = dailyData.qty.slice(-7).reduce((a, b) => a + b, 0);
+  const amt7  = dailyData.amt.slice(-7).reduce((a, b) => a + b, 0);
 
-  document.getElementById('k-qty7').textContent  = fmtQty(qty90 * 7 / 90);
-  document.getElementById('k-amt7').textContent  = fmt$(amt90 * 7 / 90);
+  document.getElementById('k-qty30').textContent = fmtQty(qty30);
+  document.getElementById('k-amt30').textContent = fmt$(amt30);
+
+  document.getElementById('k-qty7').textContent = fmtQty(qty7);
+  document.getElementById('k-amt7').textContent = fmt$(amt7);
 
   // Velocity — PCT_RECENT is already a percentage (26.6 = 26.6%)
   const pctRecent = parseFloat(item.PCT_RECENT) || 0;
@@ -98,7 +105,7 @@ function renderItem(item) {
   document.getElementById('rank-bar-lbl').textContent = `Top ${topPctStrip}%`;
 
   // ── CHARTS ──────────────────────────────────────────────────
-  renderCharts(item, qty90, amt90);
+  renderCharts(item, qty90);
 
   // ── INVENTORY TABLE ──────────────────────────────────────────
   const tbody = document.getElementById('inv-body');

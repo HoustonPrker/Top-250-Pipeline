@@ -3,12 +3,14 @@
 // Loads LAST — all other modules must be loaded first
 // ============================================================
 
-let pipelineData = [];
-let normalityMap = {};
-let storeData    = [];
-let dataReady    = false;
-let activeCharts = {};
-let activeTab    = 'item';
+let pipelineData    = [];
+let normalityMap    = {};
+let storeData       = [];
+let dailySalesData  = [];
+let dailySalesIndex = {};
+let dataReady       = false;
+let activeCharts    = {};
+let activeTab       = 'item';
 
 // ── Tab switching ─────────────────────────────────────────────
 

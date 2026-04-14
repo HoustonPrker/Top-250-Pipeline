@@ -20,33 +20,7 @@ const baseOpts = {
   }
 };
 
-function syntheticTrend(total90, days) {
-  const today = new Date();
-  const daily = total90 / days;
-  const raw = [];
-
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    const dow = d.getDay();
-    const boost = (dow === 0 || dow === 6) ? 1.28 : 1.0;
-    raw.push(Math.max(0, daily * boost * (0.45 + Math.random() * 1.10)));
-  }
-
-  const sum = raw.reduce((a, b) => a + b, 0) || 1;
-  const scale = total90 / sum;
-
-  const labels = [], data = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-    data.push(Math.round(raw[days - 1 - i] * scale));
-  }
-  return { labels, data };
-}
-
-function renderCharts(item, qty90, amt90) {
+function renderCharts(item, qty90) {
   const qty12m    = parseFloat(item.RAW_QTY_12M_TOTAL) || 0;
   const stksW     = parseInt(item.STORES_WITH_STOCK)   || 0;
   const maxStores = Math.max(
@@ -56,36 +30,47 @@ function renderCharts(item, qty90, amt90) {
   const stksOut  = Math.max(0, maxStores - stksW);
   const expected = qty12m / 4;
 
-  // ── 1. 90-Day Trend Line ─────────────────────────────────────
-  const { labels, data } = syntheticTrend(qty90, 90);
-  activeCharts.trend = new Chart(
-    document.getElementById('chart-trend').getContext('2d'), {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        data,
-        borderColor: '#3d5a80',
-        backgroundColor: 'rgba(61,90,128,0.08)',
-        borderWidth: 1.5, fill: true,
-        tension: 0.35, pointRadius: 0, pointHoverRadius: 3
-      }]
-    },
-    options: {
-      ...baseOpts,
-      scales: {
-        x: {
-          ticks: { font: { size: 9, family: 'SF Mono, monospace' }, maxTicksLimit: 13, maxRotation: 0 },
-          grid: { color: 'rgba(0,0,0,0.04)' }
-        },
-        y: {
-          ticks: { font: { size: 9, family: 'SF Mono, monospace' }, maxTicksLimit: 5 },
-          grid: { color: 'rgba(0,0,0,0.04)' },
-          beginAtZero: true
+  // ── 1. 90-Day Trend Line (real daily data) ───────────────────
+  const trendEl = document.getElementById('chart-trend');
+  const daily   = getDailySalesForItem(item.ITEM_NO);
+
+  if (daily.qty.every(v => v === 0)) {
+    // No data — show message instead of chart
+    trendEl.style.display = 'none';
+    const msg = document.createElement('div');
+    msg.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af;font-size:13px';
+    msg.textContent = 'No daily sales data available for this item.';
+    trendEl.parentNode.appendChild(msg);
+  } else {
+    trendEl.style.display = '';
+    activeCharts.trend = new Chart(trendEl.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: daily.labels,
+        datasets: [{
+          data: daily.qty,
+          borderColor: '#3d5a80',
+          backgroundColor: 'rgba(61,90,128,0.08)',
+          borderWidth: 1.5, fill: true,
+          tension: 0.1, pointRadius: 0, pointHoverRadius: 3
+        }]
+      },
+      options: {
+        ...baseOpts,
+        scales: {
+          x: {
+            ticks: { font: { size: 9, family: 'SF Mono, monospace' }, maxTicksLimit: 13, maxRotation: 0 },
+            grid: { color: 'rgba(0,0,0,0.04)' }
+          },
+          y: {
+            ticks: { font: { size: 9, family: 'SF Mono, monospace' }, maxTicksLimit: 5 },
+            grid: { color: 'rgba(0,0,0,0.04)' },
+            beginAtZero: true
+          }
         }
       }
-    }
-  });
+    });
+  }
 
   // ── 2. Store Stock Doughnut ──────────────────────────────────
   activeCharts.pie = new Chart(

@@ -47,45 +47,41 @@ function loadFromFiles() {
   var pInput = document.getElementById('fp-pipeline');
   var nInput = document.getElementById('fp-normality');
   var sInput = document.getElementById('fp-store');
+  var dInput = document.getElementById('fp-daily');
 
-  if (!pInput.files || !pInput.files[0]) {
-    alert('Please select the Pipeline Data CSV file first.');
-    return;
-  }
-  if (!nInput.files || !nInput.files[0]) {
-    alert('Please select the Normality Results CSV file first.');
-    return;
-  }
-  if (!sInput.files || !sInput.files[0]) {
-    alert('Please select the Store Data CSV file first.');
-    return;
-  }
+  if (!pInput.files || !pInput.files[0]) { alert('Please select the Pipeline Data CSV file first.'); return; }
+  if (!nInput.files || !nInput.files[0]) { alert('Please select the Normality Results CSV file first.'); return; }
+  if (!sInput.files || !sInput.files[0]) { alert('Please select the Store Data CSV file first.'); return; }
+  if (!dInput.files || !dInput.files[0]) { alert('Please select the Daily Sales CSV file first.'); return; }
 
-  var pFile = pInput.files[0];
-  var nFile = nInput.files[0];
-  var sFile = sInput.files[0];
   var results = {};
 
   function tryProcess() {
-    if (results.pipeline !== undefined && results.normality !== undefined && results.store !== undefined) {
-      processData(results.pipeline, results.normality, results.store);
+    if (results.pipeline !== undefined && results.normality !== undefined &&
+        results.store !== undefined && results.daily !== undefined) {
+      processData(results.pipeline, results.normality, results.store, results.daily);
     }
   }
 
   var r1 = new FileReader();
   r1.onload = function(e) { results.pipeline = e.target.result; tryProcess(); };
   r1.onerror = function() { alert('Could not read pipeline CSV.'); };
-  r1.readAsText(pFile);
+  r1.readAsText(pInput.files[0]);
 
   var r2 = new FileReader();
   r2.onload = function(e) { results.normality = e.target.result; tryProcess(); };
   r2.onerror = function() { alert('Could not read normality CSV.'); };
-  r2.readAsText(nFile);
+  r2.readAsText(nInput.files[0]);
 
   var r3 = new FileReader();
   r3.onload = function(e) { results.store = e.target.result; tryProcess(); };
   r3.onerror = function() { alert('Could not read store CSV.'); };
-  r3.readAsText(sFile);
+  r3.readAsText(sInput.files[0]);
+
+  var r4 = new FileReader();
+  r4.onload = function(e) { results.daily = e.target.result; tryProcess(); };
+  r4.onerror = function() { alert('Could not read daily sales CSV.'); };
+  r4.readAsText(dInput.files[0]);
 }
 
 function showFilePicker() {
@@ -100,18 +96,19 @@ async function loadData() {
   show('loading-screen');
   document.getElementById('load-msg').textContent = 'Fetching CSV files…';
   try {
-    const [pText, nText, sText] = await Promise.all([
+    const [pText, nText, sText, dText] = await Promise.all([
       fetch('data/CK_math_pipeline_data.csv').then(r => { if (!r.ok) throw new Error(); return r.text(); }),
       fetch('data/CK_normality_results.csv').then(r => { if (!r.ok) throw new Error(); return r.text(); }),
-      fetch('data/CK_store_data.csv').then(r => { if (!r.ok) throw new Error(); return r.text(); })
+      fetch('data/CK_store_data.csv').then(r => { if (!r.ok) throw new Error(); return r.text(); }),
+      fetch('data/CK_daily_sales.csv').then(r => { if (!r.ok) throw new Error(); return r.text(); })
     ]);
-    processData(pText, nText, sText);
+    processData(pText, nText, sText, dText);
   } catch (_) {
     showFilePicker();
   }
 }
 
-function processData(pText, nText, sText) {
+function processData(pText, nText, sText, dText) {
   hide('file-picker');
   show('loading-screen');
   document.getElementById('load-msg').textContent = 'Parsing data…';
@@ -134,6 +131,18 @@ function processData(pText, nText, sText) {
         header: true, skipEmptyLines: true,
         transformHeader: h => h.trim().replace(/^\uFEFF/, '')
       }).data;
+
+      dailySalesData = Papa.parse(dText, {
+        header: true, skipEmptyLines: true,
+        transformHeader: h => h.trim().replace(/^\uFEFF/, '')
+      }).data;
+
+      dailySalesIndex = {};
+      dailySalesData.forEach(row => {
+        const key = (row.ITEM_NO || '').trim();
+        if (!dailySalesIndex[key]) dailySalesIndex[key] = [];
+        dailySalesIndex[key].push(row);
+      });
 
       dataReady = true;
 

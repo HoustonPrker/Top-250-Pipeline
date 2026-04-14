@@ -65,6 +65,11 @@
       <span class="fp-hint">CK_store_data.csv</span>
       <input type="file" id="fp-store" accept=".csv">
     </div>
+    <div class="fp-row">
+      <label class="fp-lbl" for="fp-daily">Daily Sales</label>
+      <span class="fp-hint">CK_daily_sales.csv</span>
+      <input type="file" id="fp-daily" accept=".csv">
+    </div>
     <div class="fp-actions">
       <button class="btn btn-primary" onclick="loadFromFiles()">Load Data</button>
     </div>
@@ -115,12 +120,12 @@
           <div class="kpi-sub" id="k-amt90"></div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">30-Day Sales <span class="est-badge">EST</span></div>
+          <div class="kpi-lbl">30-Day Sales</div>
           <div class="kpi-val" id="k-qty30"></div>
           <div class="kpi-sub" id="k-amt30"></div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">7-Day Sales <span class="est-badge">EST</span></div>
+          <div class="kpi-lbl">7-Day Sales</div>
           <div class="kpi-val" id="k-qty7"></div>
           <div class="kpi-sub" id="k-amt7"></div>
         </div>
@@ -150,7 +155,7 @@
       <!-- Charts -->
       <div class="charts-row">
         <div class="chart-panel">
-          <div class="chart-title">90-Day Sales Trend <span class="chart-note">(synthetic)</span></div>
+          <div class="chart-title">90-Day Sales Trend</div>
           <div class="chart-container"><canvas id="chart-trend"></canvas></div>
         </div>
         <div class="chart-panel">
