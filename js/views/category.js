@@ -6,6 +6,7 @@
 let catSortCol = 'revenue', catSortDir = 'desc';
 let subcatSortCol = 'revenue', subcatSortDir = 'desc';
 let catViewCharts = {};
+let subcatFilterVal = '';
 
 function destroyCatCharts() {
   Object.values(catViewCharts).forEach(c => { try { c.destroy(); } catch (_) {} });
@@ -32,6 +33,14 @@ function buildCategoryMap() {
 function renderCategoryView() {
   if (!dataReady) return;
   renderCatOverview();
+}
+
+// ── Abbreviated revenue formatter for chart axes ──────────────
+
+function fmtRevAxis(v) {
+  if (v >= 1000000) return '$' + (v / 1000000).toFixed(v % 1000000 === 0 ? 0 : 1) + 'M';
+  if (v >= 1000)    return '$' + Math.round(v / 1000) + 'K';
+  return '$' + Math.round(v);
 }
 
 // ── Category overview table ───────────────────────────────────
@@ -88,8 +97,8 @@ function renderCatOverview() {
   }).join('');
 
   const tbody = catList.map((c, idx) => {
-    const velCls     = c.vel >= 30 ? 'vel-up' : c.vel < 20 ? 'vel-down' : 'vel-ss';
-    const velArrow   = c.vel >= 30 ? '↑'      : c.vel < 20 ? '↓'        : '→';
+    const velCls     = c.vel >= 35 ? 'vel-up' : c.vel >= 25 ? 'vel-ss' : 'vel-down';
+    const velArrow   = c.vel >= 35 ? '↑'      : c.vel >= 25 ? '→'       : '↓';
     const isTop5     = idx < 5;
     const isGroupEnd = (idx + 1) % 5 === 0 && idx !== catList.length - 1;
     const rowCls     = [isTop5 ? 'cat-top5' : '', isGroupEnd ? 'cat-group-end' : ''].filter(Boolean).join(' ');
@@ -119,11 +128,11 @@ function renderCatOverview() {
         <div class="chart-container" style="height:420px"><canvas id="cat-bar-chart"></canvas></div>
       </div>
       <div class="chart-panel">
-        <div class="chart-panel-title">Top 5 Categories by Revenue</div>
+        <div class="chart-panel-title">Top 8 Categories by Revenue</div>
         <div class="chart-container" style="height:420px"><canvas id="cat-donut-chart"></canvas></div>
       </div>
     </div>
-    <div class="inv-wrap">
+    <div class="inv-wrap" style="margin-top:16px">
       <table class="data-table">
         <thead><tr>${thead}</tr></thead>
         <tbody>${tbody}</tbody>
@@ -134,9 +143,9 @@ function renderCatOverview() {
 }
 
 function renderCatCharts(catList) {
-  // Sort by revenue desc for the bar chart
   const sorted = [...catList].sort((a, b) => b.rev - a.rev);
 
+  // Velocity thresholds: green >35%, yellow 25-35%, red <25%
   const barColors = sorted.map(c =>
     c.vel > 35 ? '#16a34a' : c.vel >= 25 ? '#d97706' : '#dc2626'
   );
@@ -162,7 +171,7 @@ function renderCatCharts(catList) {
         datasets: [{
           data: sorted.map(c => c.rev),
           backgroundColor: barColors,
-          borderColor: barColors.map(c => c),
+          borderColor: barColors,
           borderWidth: 0,
           borderRadius: 3
         }]
@@ -175,9 +184,7 @@ function renderCatCharts(catList) {
           legend: { display: false },
           tooltip: {
             ...tooltipDefaults,
-            callbacks: {
-              label: ctx => ` ${fmtRevMM(ctx.parsed.x)}`
-            }
+            callbacks: { label: ctx => ` ${fmtRevMM(ctx.parsed.x)}` }
           }
         },
         scales: {
@@ -185,7 +192,7 @@ function renderCatCharts(catList) {
             ticks: {
               font: { size: 11, family: 'Inter, sans-serif' },
               color: '#6b7280',
-              callback: v => fmtRevMM(v)
+              callback: v => fmtRevAxis(v)
             },
             grid: { color: 'rgba(0,0,0,0.04)' }
           },
@@ -198,27 +205,23 @@ function renderCatCharts(catList) {
     });
   }
 
-  // ── Top-5 doughnut ────────────────────────────────────────────
+  // ── Top-8 doughnut ────────────────────────────────────────────
   const donutCtx = document.getElementById('cat-donut-chart');
   if (donutCtx) {
-    const top5   = sorted.slice(0, 5);
-    const others = sorted.slice(5);
+    const top8    = sorted.slice(0, 8);
+    const others  = sorted.slice(8);
     const otherRev = others.reduce((s, c) => s + c.rev, 0);
-    const palette  = ['#1a3550', '#2d4a6e', '#3d5a80', '#6b8aad', '#9bb5d0', '#d1d5db'];
+    const palette  = ['#1a3550','#2d4a6e','#3d5a80','#4e6e96','#6b8aad','#8aa4c4','#9bb5d0','#b8cfe0','#d1d5db'];
 
-    const labels = [...top5.map(c => c.name), `Other (${others.length} categories)`];
-    const data   = [...top5.map(c => c.rev), otherRev];
+    const labels = [...top8.map(c => c.name), ...(others.length ? [`Other (${others.length})`] : [])];
+    const data   = [...top8.map(c => c.rev),  ...(others.length ? [otherRev] : [])];
+    const colors = others.length ? palette : palette.slice(0, top8.length);
 
     catViewCharts.donut = new Chart(donutCtx.getContext('2d'), {
       type: 'doughnut',
       data: {
         labels,
-        datasets: [{
-          data,
-          backgroundColor: palette,
-          borderColor: '#fff',
-          borderWidth: 2
-        }]
+        datasets: [{ data, backgroundColor: colors, borderColor: '#fff', borderWidth: 2 }]
       },
       options: {
         responsive: true,
@@ -229,7 +232,7 @@ function renderCatCharts(catList) {
             display: true,
             position: 'bottom',
             labels: {
-              font: { size: 11, family: 'Inter, sans-serif' },
+              font: { size: 12, family: 'Inter, sans-serif' },
               color: '#374151',
               boxWidth: 12,
               padding: 8
@@ -261,21 +264,29 @@ function catSortBy(col) {
 
 function showCategoryDetail(catName) {
   destroyCatCharts();
+  subcatFilterVal = '';
 
   const catMap = buildCategoryMap();
   const cat    = catMap[catName];
   if (!cat) return;
 
   const subcatList = Object.values(cat.subcats).map(sub => {
-    const rev     = sub.items.reduce((s, i) => s + (parseFloat(i.RAW_AMT_90D) || 0), 0);
-    const qty     = sub.items.reduce((s, i) => s + (parseFloat(i.RAW_QTY_90D) || 0), 0);
-    const vel     = sub.items.reduce((s, i) => s + (parseFloat(i.PCT_RECENT)  || 0), 0) / sub.items.length;
+    const rev  = sub.items.reduce((s, i) => s + (parseFloat(i.RAW_AMT_90D) || 0), 0);
+    const qty  = sub.items.reduce((s, i) => s + (parseFloat(i.RAW_QTY_90D) || 0), 0);
+    const vel  = sub.items.reduce((s, i) => s + (parseFloat(i.PCT_RECENT)  || 0), 0) / sub.items.length;
+    // 30D revenue: sum from daily sales if available, else estimate
+    const rev30 = sub.items.reduce((s, i) => {
+      const d = getDailySalesForItem(i.ITEM_NO);
+      const amt = d.amt.slice(-30).reduce((a, b) => a + b, 0);
+      return s + (amt > 0 ? amt : (parseFloat(i.RAW_AMT_90D) || 0) / 3);
+    }, 0);
     const normKey = `${catName}|${sub.name}`;
     const norm    = normalityMap[normKey];
-    return { name: sub.name, items: sub.itemList || sub.items, itemCount: sub.items.length, rev, qty, vel, norm };
+    return { name: sub.name, items: sub.items, itemCount: sub.items.length, rev, qty, vel, rev30, norm };
   });
 
-  const catRev = subcatList.reduce((s, c) => s + c.rev, 0);
+  const catRev   = subcatList.reduce((s, c) => s + c.rev, 0);
+  const catRev30 = subcatList.reduce((s, c) => s + c.rev30, 0);
 
   subcatList.sort((a, b) => {
     const dir = subcatSortDir === 'asc' ? 1 : -1;
@@ -285,12 +296,57 @@ function showCategoryDetail(catName) {
       case 'qty':     return dir * (a.qty - b.qty);
       case 'revenue': return dir * (a.rev - b.rev);
       case 'qty30':   return dir * (a.qty - b.qty);
-      case 'rev30':   return dir * (a.rev - b.rev);
+      case 'rev30':   return dir * (a.rev30 - b.rev30);
       case 'vel':     return dir * (a.vel - b.vel);
       default:        return dir * (a.rev - b.rev);
     }
   });
 
+  // Chart: cap at 12 sub-categories
+  const chartData  = [...subcatList].sort((a, b) => b.rev - a.rev);
+  const chartItems = chartData.slice(0, 12);
+  const chartNote  = chartData.length > 12
+    ? `<div class="subcat-chart-note">Showing top 12 of ${chartData.length} sub-categories by revenue. Full list in table below.</div>`
+    : '';
+  const chartH = Math.min(400, Math.max(180, chartItems.length * 32));
+
+  document.getElementById('cat-view-content').innerHTML = `
+    <div class="cat-nav-breadcrumb">
+      <a class="cat-back-link" onclick="renderCatOverview()">← All Categories</a>
+      <span style="color:#9ca3af;margin:0 8px">/</span>
+      <span style="color:#1a2332;font-weight:600">${catName} (${cat.items.length.toLocaleString()} items)</span>
+    </div>
+    <div class="cat-stat-bar">
+      <div class="cat-stat-item"><span class="cat-stat-lbl">Sub-categories:</span><span class="cat-stat-val">${subcatList.length}</span></div>
+      <span class="cat-stat-sep">·</span>
+      <div class="cat-stat-item"><span class="cat-stat-lbl">Total Items:</span><span class="cat-stat-val">${cat.items.length.toLocaleString()}</span></div>
+      <span class="cat-stat-sep">·</span>
+      <div class="cat-stat-item"><span class="cat-stat-lbl">90D Revenue:</span><span class="cat-stat-val">${fmtRevMM(catRev)}</span></div>
+      <span class="cat-stat-sep">·</span>
+      <div class="cat-stat-item"><span class="cat-stat-lbl">30D Revenue:</span><span class="cat-stat-val">${fmtRevMM(catRev30)}</span></div>
+    </div>
+    <div class="subcat-detail-layout">
+      <div class="chart-panel subcat-chart-panel">
+        <div class="chart-panel-title">Sub-Category Revenue (90D)</div>
+        ${chartNote}
+        <div class="chart-container" style="height:${chartH}px"><canvas id="subcat-bar-chart"></canvas></div>
+      </div>
+      <div class="subcat-table-panel">
+        <input class="subcat-filter-input" id="subcat-filter" placeholder="Filter sub-categories…"
+               oninput="filterSubcatTable(this.value)" value="${subcatFilterVal}">
+        <div class="inv-wrap">
+          <table class="data-table" id="subcat-detail-table">
+            <thead><tr>${buildSubcatThead(catName)}</tr></thead>
+            <tbody id="subcat-detail-tbody">${buildSubcatTbody(subcatList, catName)}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+
+  setTimeout(() => renderSubcatChart(chartItems), 0);
+}
+
+function buildSubcatThead(catName) {
   const cols = [
     { key: '',        label: '' },
     { key: 'name',    label: 'Sub-Category' },
@@ -302,18 +358,19 @@ function showCategoryDetail(catName) {
     { key: 'vel',     label: 'Avg Velocity', cls: 'num-ctr' },
     { key: '',        label: 'Normal?',      cls: 'num-ctr' },
   ];
-
-  const thead = cols.map(c => {
+  return cols.map(c => {
     if (!c.key) return `<th${c.cls ? ` class="${c.cls}"` : ''}>${c.label}</th>`;
     const active = subcatSortCol === c.key;
     const icon   = active ? (subcatSortDir === 'asc' ? '▲' : '▼') : '⇅';
     const cls    = [c.cls || '', 'sort-th', active ? 'sort-active' : ''].filter(Boolean).join(' ');
     return `<th class="${cls}" onclick="subcatDetailSortBy('${catName.replace(/'/g, "\\'")}','${c.key}')">${c.label}<span class="sort-icon">${icon}</span></th>`;
   }).join('');
+}
 
-  const tbody = subcatList.map(sub => {
-    const velCls    = sub.vel >= 30 ? 'vel-up' : sub.vel < 20 ? 'vel-down' : 'vel-ss';
-    const velArrow  = sub.vel >= 30 ? '↑' : sub.vel < 20 ? '↓' : '→';
+function buildSubcatTbody(subcatList, catName) {
+  return subcatList.map(sub => {
+    const velCls    = sub.vel >= 35 ? 'vel-up' : sub.vel >= 25 ? 'vel-ss' : 'vel-down';
+    const velArrow  = sub.vel >= 35 ? '↑' : sub.vel >= 25 ? '→' : '↓';
     const normBadge = sub.norm
       ? (sub.norm.NORMAL === 'Yes'
         ? '<span class="norm-badge norm-yes">Normal</span>'
@@ -321,14 +378,14 @@ function showCategoryDetail(catName) {
       : '<span style="color:#9ca3af;font-size:10px">—</span>';
     const safeId = (catName + '_' + sub.name).replace(/[^a-zA-Z0-9_]/g, '_');
     return `
-      <tr class="subcat-header-row" onclick="toggleSubcatAccordion('${safeId}', '${catName.replace(/'/g, "\\'")}', '${sub.name.replace(/'/g, "\\'")}')">
+      <tr class="subcat-header-row" data-subcat="${sub.name.toLowerCase()}" onclick="toggleSubcatAccordion('${safeId}', '${catName.replace(/'/g, "\\'")}', '${sub.name.replace(/'/g, "\\'")}')">
         <td style="width:28px;text-align:center"><span class="acc-toggle-btn" id="acc-btn-${safeId}">▶</span></td>
         <td><strong>${sub.name}</strong></td>
         <td class="num-ctr">${sub.itemCount}</td>
         <td class="num-ctr">${fmtQty(sub.qty)}</td>
         <td class="num-ctr">${fmtRevMM(sub.rev)}</td>
         <td class="num-ctr">${fmtQty(sub.qty / 3)}</td>
-        <td class="num-ctr">${fmtRevMM(sub.rev / 3)}</td>
+        <td class="num-ctr">${fmtRevMM(sub.rev30)}</td>
         <td class="num-ctr"><span class="${velCls}">${velArrow}</span> ${sub.vel.toFixed(1)}%</td>
         <td class="num-ctr">${normBadge}</td>
       </tr>
@@ -336,39 +393,25 @@ function showCategoryDetail(catName) {
         <td colspan="9"><div class="acc-content" id="acc-content-${safeId}"></div></td>
       </tr>`;
   }).join('');
-
-  const chartH = Math.max(180, subcatList.length * 32);
-
-  document.getElementById('cat-view-content').innerHTML = `
-    <div class="cat-nav-breadcrumb">
-      <a class="cat-back-link" onclick="renderCatOverview()">← All Categories</a>
-      <span style="color:#9ca3af;margin:0 8px">/</span>
-      <span style="color:#1a2332;font-weight:600">${catName}</span>
-    </div>
-    <div class="cat-section-heading">${catName} — Sub-categories</div>
-    <div class="cat-stat-bar">
-      <div class="cat-stat-item"><span class="cat-stat-lbl">Sub-categories:</span><span class="cat-stat-val">${subcatList.length}</span></div>
-      <span class="cat-stat-sep">·</span>
-      <div class="cat-stat-item"><span class="cat-stat-lbl">Total Items:</span><span class="cat-stat-val">${cat.items.length.toLocaleString()}</span></div>
-      <span class="cat-stat-sep">·</span>
-      <div class="cat-stat-item"><span class="cat-stat-lbl">90D Revenue:</span><span class="cat-stat-val">${fmtRevMM(catRev)}</span></div>
-    </div>
-    <div class="chart-panel" style="margin-bottom:16px">
-      <div class="chart-panel-title">Sub-Category Revenue (90D)</div>
-      <div class="chart-container" style="height:${chartH}px"><canvas id="subcat-bar-chart"></canvas></div>
-    </div>
-    <div class="inv-wrap">
-      <table class="data-table">
-        <thead><tr>${thead}</tr></thead>
-        <tbody>${tbody}</tbody>
-      </table>
-    </div>`;
-
-  setTimeout(() => renderSubcatChart(subcatList), 0);
 }
 
-function renderSubcatChart(subcatList) {
-  const sorted = [...subcatList].sort((a, b) => b.rev - a.rev);
+function filterSubcatTable(val) {
+  subcatFilterVal = val;
+  const q = val.trim().toLowerCase();
+  document.querySelectorAll('#subcat-detail-tbody .subcat-header-row').forEach(row => {
+    const name  = (row.dataset.subcat || '').toLowerCase();
+    const show  = !q || name.includes(q);
+    const safeId = row.querySelector('.acc-toggle-btn')?.id?.replace('acc-btn-', '');
+    row.style.display = show ? '' : 'none';
+    if (safeId) {
+      const accRow = document.getElementById('acc-row-' + safeId);
+      if (accRow) accRow.style.display = show && accRow.dataset.wasOpen ? '' : 'none';
+    }
+  });
+}
+
+function renderSubcatChart(chartItems) {
+  const sorted = [...chartItems].sort((a, b) => b.rev - a.rev);
   const barColors = sorted.map(s =>
     s.vel > 35 ? '#16a34a' : s.vel >= 25 ? '#d97706' : '#dc2626'
   );
@@ -403,20 +446,41 @@ function renderSubcatChart(subcatList) {
           titleFont: { family: 'Inter, sans-serif', size: 12, weight: '600' },
           bodyFont: { family: 'Inter, sans-serif', size: 12 },
           callbacks: { label: ctx => ` ${fmtRevMM(ctx.parsed.x)}` }
-        }
+        },
+        // Revenue labels at end of each bar
+        datalabels: false
       },
       scales: {
         x: {
           ticks: {
             font: { size: 11, family: 'Inter, sans-serif' },
             color: '#6b7280',
-            callback: v => fmtRevMM(v)
+            callback: v => fmtRevAxis(v)
           },
           grid: { color: 'rgba(0,0,0,0.04)' }
         },
         y: {
           ticks: { font: { size: 11, family: 'Inter, sans-serif' }, color: '#374151' },
           grid: { display: false }
+        }
+      },
+      animation: {
+        onComplete: function() {
+          const chart = this;
+          const ctx2  = chart.ctx;
+          ctx2.save();
+          ctx2.font = '11px Inter, sans-serif';
+          ctx2.fillStyle = '#374151';
+          ctx2.textBaseline = 'middle';
+          chart.data.datasets[0].data.forEach((val, i) => {
+            const meta = chart.getDatasetMeta(0);
+            const bar  = meta.data[i];
+            if (!bar) return;
+            const x = bar.x + 6;
+            const y = bar.y;
+            ctx2.fillText(fmtRevAxis(val), x, y);
+          });
+          ctx2.restore();
         }
       }
     }
@@ -444,9 +508,11 @@ function toggleSubcatAccordion(safeId, catName, subcatName) {
   const isOpen = row.style.display !== 'none';
   if (isOpen) {
     row.style.display = 'none';
+    delete row.dataset.wasOpen;
     btn.classList.remove('open');
   } else {
     row.style.display = '';
+    row.dataset.wasOpen = '1';
     btn.classList.add('open');
     if (!content.dataset.built) {
       buildAccordionItems(content, catName, subcatName);
@@ -471,19 +537,19 @@ function buildAccordionItems(container, catName, subcatName) {
     const pctR     = Math.round(pct * 10) / 10;
     const pctCls   = pct >= 75 ? 'pct-green' : pct >= 25 ? 'pct-yellow' : 'pct-red';
     const sparkCls = pct >= 75 ? 'spark-green' : pct >= 25 ? 'spark-yellow' : 'spark-red';
-    const velCls   = (parseFloat(item.PCT_RECENT) || 0) >= 30 ? 'vel-up'
-                   : (parseFloat(item.PCT_RECENT) || 0) < 20  ? 'vel-down' : 'vel-ss';
-    const velArrow = (parseFloat(item.PCT_RECENT) || 0) >= 30 ? '↑'
-                   : (parseFloat(item.PCT_RECENT) || 0) < 20  ? '↓' : '→';
+    const velCls   = (parseFloat(item.PCT_RECENT) || 0) >= 35 ? 'vel-up'
+                   : (parseFloat(item.PCT_RECENT) || 0) >= 25 ? 'vel-ss' : 'vel-down';
+    const velArrow = (parseFloat(item.PCT_RECENT) || 0) >= 35 ? '↑'
+                   : (parseFloat(item.PCT_RECENT) || 0) >= 25 ? '→' : '↓';
     const status   = (item.STATUS || '').trim().toUpperCase();
     const stsCls   = status === 'ACTIVE' ? 'sts-active' : status === 'OUT OF STOCK' ? 'sts-oos' : 'sts-ns';
     const stsLbl   = status === 'ACTIVE' ? 'Active' : status === 'OUT OF STOCK' ? 'OOS' : 'Not Selling';
 
     return `<tr onclick="zoomToItem('${(item.ITEM_NO||'').replace(/'/g,"\\'")}')">
-      <td><a class="item-link">${item.ITEM_NO || '—'}</a></td>
-      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${item.ITEM_NAME || '—'}</td>
+      <td><a class="item-link" title="Open in Item Zoom">${item.ITEM_NO || '—'}</a></td>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${item.ITEM_NAME || '—'}</td>
       <td class="num">
-        <span class="pct-badge ${pctCls}">${pctR}th</span>
+        <span class="pct-badge ${pctCls}" style="font-size:14px;font-weight:700">${pctR}%</span>
         <div class="pct-spark"><div class="pct-spark-fill ${sparkCls}" style="width:${Math.min(100, pctR)}%"></div></div>
       </td>
       <td class="num">${fmtQty(item.RAW_QTY_90D)}</td>
