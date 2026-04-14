@@ -498,7 +498,9 @@ var Papa = {
   th.sort-th { cursor: pointer; user-select: none; white-space: nowrap; }
   th.sort-th:hover { color: #3d5a80; background: #f5f7fa; }
   .sort-icon { margin-left: 3px; font-size: 9px; opacity: 0.35; }
-  th.sort-th.sort-active .sort-icon { opacity: 1; color: #3d5a80; }
+  th.sort-th.sort-active .sort-icon { opacity: 1; }
+  .cat-link { color: #3d5a80; font-weight: 600; text-decoration: none; }
+  .cat-link:hover { text-decoration: underline; color: #2d4a6e; }
 
   /* ── SUBCAT TABLE: top-3 left accent + row hover ─ */
   .subcat-top > td:first-child { border-left: 3px solid #3d5a80; padding-left: 9px; }
@@ -830,16 +832,12 @@ var Papa = {
 
     <!-- Category Overview -->
     <div id="cat-overview-section">
-      <div class="cat-controls">
-        <span class="cat-controls-label">Sort by:</span>
-        <select id="cat-sort" class="sort-select" onchange="catSortBy = this.value; renderCategoryOverview();">
-          <option value="revenue">Revenue</option>
-          <option value="qty">Qty Sold</option>
-          <option value="items">Item Count</option>
-          <option value="name">Category Name</option>
-        </select>
+      <div class="inv-wrap">
+        <table class="data-table" id="cat-overview-table">
+          <thead id="cat-overview-thead"></thead>
+          <tbody id="cat-overview-tbody"></tbody>
+        </table>
       </div>
-      <div class="cat-cards-grid" id="cat-cards"></div>
     </div>
 
     <!-- Sub-Category Detail -->
@@ -920,7 +918,2703 @@ let fileMode = false;
 // ─────────────────────────────────────────────────────────
 function fmtQty(n) { return Math.round(parseFloat(n) || 0).toLocaleString(); }
 function fmtAmt(n) {
-  return '$' + (parseFloat(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return '
+
+// ─────────────────────────────────────────────────────────
+// SCREEN MANAGEMENT
+// ─────────────────────────────────────────────────────────
+function showScreen(id) {
+  ['loading-screen','picker-screen','welcome-screen','error-screen'].forEach(function(s) {
+    var el = document.getElementById(s);
+    if (el) el.style.display = 'none';
+  });
+  document.getElementById('item-screen').style.display = 'none';
+  var target = document.getElementById(id);
+  if (target) target.style.display = (id === 'item-screen') ? 'block' : 'flex';
+}
+
+// ─────────────────────────────────────────────────────────
+// NAV STATS
+// ─────────────────────────────────────────────────────────
+function updateNavStat() {
+  var count = pipelineData.length;
+  var subcats = new Set(pipelineData.map(function(i){ return i.CATEG_COD + '|' + i.SUBCAT_COD; })).size;
+  var normCount = Object.keys(normalityMap).length;
+  var ts = DataLoader.getLastLoaded();
+  var timeStr = ts ? ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  document.getElementById('nav-stat').textContent =
+    count.toLocaleString() + ' items · ' + subcats + ' sub-cats' + (timeStr ? ' · ' + timeStr : '');
+  document.getElementById('welcome-stats').textContent =
+    count.toLocaleString() + ' items · ' + subcats + ' sub-categories · ' + normCount + ' normality records loaded';
+  document.getElementById('refresh-btn').disabled = false;
+  var footer = DataLoader.getLastLoaded();
+  if (footer) {
+    document.getElementById('dash-footer').textContent =
+      'CK Analytics v1.0 POC · Data loaded ' + footer.toLocaleDateString() + ' ' +
+      footer.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// INIT & REFRESH
+// ─────────────────────────────────────────────────────────
+async function init() {
+  showScreen('loading-screen');
+  try {
+    var result = await DataLoader.loadAll();
+    pipelineData = result.pipeline;
+    normalityMap = result.normality;
+    try {
+      updateNavStat();
+      showScreen('welcome-screen');
+      document.getElementById('item-search').focus();
+      // Read hash to determine initial view; default to item 4000
+      var hash  = (location.hash || '').replace('#', '').trim();
+      var parts = hash.split('/');
+      var initTab = parts[0] || 'item';
+      if (initTab === 'category') {
+        switchTab('category');
+        if (parts[1]) { showCategoryDetail(parts[1]); if (parts[2]) showSubcatItems(parts[2]); }
+      } else if (initTab === 'store') {
+        switchTab('store');
+      } else {
+        var initItem = parts[1] || '4000';
+        doSearch(initItem);
+      }
+    } catch(uiErr) {
+      console.error('[CK] UI transition error after data load:', uiErr);
+    }
+  } catch(e) {
+    console.error('[CK] Data load failed, showing file picker:', e);
+    fileMode = true;
+    showScreen('picker-screen');
+  }
+}
+
+async function refreshData() {
+  if (fileMode) { showScreen('picker-screen'); return; }
+  var btn = document.getElementById('refresh-btn');
+  btn.textContent = '↻ Refreshing…';
+  btn.disabled = true;
+  try {
+    var result = await DataLoader.refresh();
+    pipelineData = result.pipeline;
+    normalityMap = result.normality;
+    updateNavStat();
+    btn.textContent = '↻ Refresh';
+  } catch(e) {
+    btn.textContent = '↻ Refresh';
+    btn.disabled = false;
+    alert('Could not refresh data.');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// FILE PICKER (file:// fallback)
+// ─────────────────────────────────────────────────────────
+function loadFromFiles() {
+  var pInput = document.getElementById('fp-pipeline');
+  var nInput = document.getElementById('fp-normality');
+  if (!pInput.files || !pInput.files[0]) { alert('Please select the Pipeline Data CSV file.'); return; }
+  if (!nInput.files || !nInput.files[0]) { alert('Please select the Normality Results CSV file.'); return; }
+
+  showScreen('loading-screen');
+  document.getElementById('load-msg').textContent = 'Reading files…';
+
+  var results = {};
+  function tryProcess() {
+    if (results.pipeline !== undefined && results.normality !== undefined) {
+      processFromText(results.pipeline, results.normality);
+    }
+  }
+
+  var r1 = new FileReader();
+  r1.onload = function(e) { results.pipeline = e.target.result; tryProcess(); };
+  r1.onerror = function() { alert('Could not read pipeline CSV.'); };
+  r1.readAsText(pInput.files[0]);
+
+  var r2 = new FileReader();
+  r2.onload = function(e) { results.normality = e.target.result; tryProcess(); };
+  r2.onerror = function() { alert('Could not read normality CSV.'); };
+  r2.readAsText(nInput.files[0]);
+}
+
+function processFromText(pText, nText) {
+  document.getElementById('load-msg').textContent = 'Parsing data…';
+  setTimeout(function() {
+    try {
+      pipelineData = Papa.parse(pText, {
+        header: true, skipEmptyLines: true,
+        transformHeader: function(h){ return h.trim().replace(/^\uFEFF/, ''); }
+      }).data;
+
+      var rows = Papa.parse(nText, {
+        header: true, skipEmptyLines: true,
+        transformHeader: function(h){ return h.trim().replace(/^\uFEFF/, ''); }
+      }).data;
+      normalityMap = {};
+      rows.forEach(function(r){ normalityMap[r.CATEG_COD + '|' + r.SUBCAT_COD] = r; });
+
+      DataLoader._state.pipelineData = pipelineData;
+      DataLoader._state.normalityMap = normalityMap;
+      DataLoader._state.lastLoaded = new Date();
+
+      updateNavStat();
+      showScreen('welcome-screen');
+      document.getElementById('item-search').focus();
+      doSearch('4000');
+    } catch(err) {
+      console.error('[CK] processFromText error:', err);
+      var msg = document.getElementById('load-msg');
+      msg.textContent = '\u274C Error: ' + err.message;
+      msg.style.color = '#dc2626';
+    }
+  }, 20);
+}
+
+// ─────────────────────────────────────────────────────────
+// SEARCH
+// ─────────────────────────────────────────────────────────
+function doSearch(itemNo) {
+  var q = (itemNo ? String(itemNo) : document.getElementById('item-search').value).trim().toUpperCase();
+  if (itemNo) document.getElementById('item-search').value = q;
+  if (!q) return;
+  if (!pipelineData.length) { alert('Data is still loading — please wait.'); return; }
+  var item = pipelineData.find(function(i){ return (i.ITEM_NO || '').trim().toUpperCase() === q; });
+  if (!item) {
+    document.getElementById('error-msg').textContent =
+      'No item found for "' + q + '". Check the number and try again.';
+    showScreen('error-screen');
+    return;
+  }
+  renderItem(item);
+}
+
+function clearView() {
+  document.getElementById('item-search').value = '';
+  Object.values(activeCharts).forEach(function(c){ c.destroy(); });
+  activeCharts = {};
+  if (pipelineData.length) showScreen('welcome-screen');
+}
+
+// ─────────────────────────────────────────────────────────
+// RENDER ITEM
+// ─────────────────────────────────────────────────────────
+function renderItem(item) {
+  var qty90     = parseFloat(item.RAW_QTY_90D)      || 0;
+  var amt90     = parseFloat(item.RAW_AMT_90D)      || 0;
+  var qty12m    = parseFloat(item.RAW_QTY_12M_TOTAL) || 0;
+  var amt12m    = parseFloat(item.RAW_AMT_12M_TOTAL) || 0;
+  var pctRecent = parseFloat(item.PCT_RECENT)        || 0;
+  var txnCount  = parseInt(item.TXN_COUNT)           || 0;
+  var rankNum   = parseInt(item.SUBCAT_RANK)         || 0;
+  var rankTotal = parseInt(item.SUBCAT_TOTAL)  || parseInt(item.PEER_COUNT) || 0;
+
+  // Percentile
+  var pResult    = computePercentile(item, pipelineData, normalityMap);
+  var pctR       = pResult.pct;
+  var method     = pResult.method;
+  var topPct     = Math.round((100 - pctR) * 10) / 10;
+  var topPctHdr  = rankTotal > 0 ? Math.round((1 - (rankNum - 1) / rankTotal) * 100) : 0;
+
+  // ── Header ──
+  document.getElementById('h-name').textContent   = item.ITEM_NAME || item.ITEM_NO;
+  document.getElementById('h-itemno').textContent = '# ' + item.ITEM_NO;
+  document.getElementById('h-rank').textContent   = 'Rank ' + rankNum + ' of ' + rankTotal + '  (top ' + topPctHdr + '%)';
+  document.getElementById('h-categ').textContent  = item.CATEG_COD;
+  document.getElementById('h-subcat').textContent = item.SUBCAT_COD;
+  document.getElementById('h-method').textContent = item.RANK_METHOD || '—';
+  document.getElementById('h-peers').textContent  = item.PEER_COUNT  || '—';
+
+  // ── KPI: 90-day ──
+  document.getElementById('k-qty90').textContent = fmtQty(qty90);
+  document.getElementById('k-amt90').textContent = fmtAmt(amt90);
+  document.getElementById('k-txn').textContent   = txnCount.toLocaleString() + ' transactions';
+
+  // ── KPI: 30-day (est) ──
+  document.getElementById('k-qty30').textContent = fmtQty(qty90 / 3);
+  document.getElementById('k-amt30').textContent = fmtAmt(amt90 / 3);
+
+  // ── KPI: 7-day (est) ──
+  document.getElementById('k-qty7').textContent  = fmtQty(qty90 / (90 / 7));
+  document.getElementById('k-amt7').textContent  = fmtAmt(amt90 / (90 / 7));
+
+  // ── KPI: Velocity ──
+  var velCls = 'vel-ss', velLbl = 'Steady';
+  if (pctRecent > 30)      { velCls = 'vel-up';   velLbl = 'Trending Up ↑'; }
+  else if (pctRecent < 20) { velCls = 'vel-down'; velLbl = 'Trending Down ↓'; }
+  document.getElementById('k-vel').innerHTML  = '<span class="' + velCls + '">' + velLbl + '</span>';
+  document.getElementById('k-pct').textContent = pctRecent.toFixed(1) + '% of 12M sales in last 90D';
+
+  // ── KPI: Status ──
+  var status = (item.STATUS || '').trim();
+  var stsCls = status === 'ACTIVE' ? 'sts-active' : status === 'OUT OF STOCK' ? 'sts-oos' : 'sts-ns';
+  document.getElementById('k-status').innerHTML    = '<span class="' + stsCls + '">' + (status || '—') + '</span>';
+  document.getElementById('k-stock').textContent   = fmtQty(item.QTY_AVAIL_ALL_STORES) + ' units available';
+  document.getElementById('k-stock-note').textContent = (item.STORES_WITH_STOCK || 0) + ' stores with stock';
+
+  // ── Rank Strip ──
+  document.getElementById('rank-main').innerHTML =
+    'Sub-category rank: <strong>' + rankNum + '</strong> of <strong>' + rankTotal + '</strong>' +
+    ' — <span class="rank-pct">Top ' + topPct + '%</span> of ' + item.SUBCAT_COD + ' items';
+  document.getElementById('rank-method').textContent = 'Percentile method: ' + method;
+  document.getElementById('rank-bar').style.width    = Math.min(100, pctR) + '%';
+  document.getElementById('rank-bar-lbl').textContent = 'Top ' + topPct + '%';
+
+  // ── Inventory Table ──
+  var invBody = document.getElementById('inv-body');
+  invBody.innerHTML = '';
+  var aggRow = invBody.insertRow();
+  aggRow.className = 'agg-row';
+  var aggCols = [
+    { v: 'All Stores', cls: '' },
+    { v: fmtQty(item.QTY_ON_HND_ALL_STORES), cls: 'num' },
+    { v: fmtQty(item.QTY_AVAIL_ALL_STORES),  cls: 'num' },
+    { v: item.STORES_WITH_STOCK || '—', cls: 'num' },
+    { v: fmtQty(qty12m), cls: 'num' },
+    { v: fmtAmt(amt12m), cls: 'num' },
+    { v: '<span class="' + stsCls + '">' + (status || '—') + '</span>', cls: '', html: true }
+  ];
+  aggCols.forEach(function(col) {
+    var td = aggRow.insertCell();
+    if (col.cls) td.className = col.cls;
+    if (col.html) td.innerHTML = col.v; else td.textContent = col.v;
+  });
+  var noteRow = invBody.insertRow();
+  noteRow.className = 'note-row';
+  var ntd = noteRow.insertCell();
+  ntd.colSpan = 7;
+  ntd.textContent = 'Per-store detail requires IM_INV join — not yet available in this POC.';
+
+  // ── Show & Charts ──
+  document.getElementById('item-screen').dataset.loaded = 'true';
+  showScreen('item-screen');
+  Object.values(activeCharts).forEach(function(c){ c.destroy(); });
+  activeCharts = {};
+  renderCharts(item, qty90, amt90);
+}
+
+// ─────────────────────────────────────────────────────────
+// CHARTS
+// ─────────────────────────────────────────────────────────
+var baseOpts = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      mode: 'index', intersect: false,
+      bodyFont:  { family: 'Inter, system-ui, sans-serif', size: 11 },
+      titleFont: { family: 'Inter, system-ui, sans-serif', size: 11 }
+    }
+  }
+};
+
+function syntheticTrend(totalQty, days) {
+  var dailyAvg = totalQty / days;
+  var labels = [], data = [], now = new Date();
+  for (var d = days - 1; d >= 0; d--) {
+    var date = new Date(now);
+    date.setDate(date.getDate() - d);
+    labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    var dow = date.getDay();
+    var wk  = (dow === 0 || dow === 6) ? 1.25 : 0.92;
+    data.push(Math.max(0, Math.round(dailyAvg * wk * (0.65 + Math.random() * 0.7))));
+  }
+  return { labels: labels, data: data };
+}
+
+function renderCharts(item, qty90, amt90) {
+  var qty12m  = parseFloat(item.RAW_QTY_12M_TOTAL) || 0;
+  var stksW   = parseInt(item.STORES_WITH_STOCK)   || 0;
+  var maxSt   = Math.max(
+    pipelineData.reduce(function(m,i){ return Math.max(m, parseInt(i.STORE_COUNT)||0); }, 0),
+    stksW
+  );
+  var stksOut  = Math.max(0, maxSt - stksW);
+  var expected = qty12m / 4;
+
+  // 1. Trend line
+  var trend = syntheticTrend(qty90, 90);
+  activeCharts.trend = new Chart(
+    document.getElementById('chart-trend').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: trend.labels,
+      datasets: [{ data: trend.data,
+        borderColor: '#3d5a80', backgroundColor: 'rgba(61,90,128,0.07)',
+        borderWidth: 1.5, fill: true, tension: 0.35, pointRadius: 0, pointHoverRadius: 3
+      }]
+    },
+    options: Object.assign({}, baseOpts, {
+      scales: {
+        x: { ticks: { font: { size: 9 }, maxTicksLimit: 13, maxRotation: 0 }, grid: { color: 'rgba(0,0,0,0.04)' } },
+        y: { ticks: { font: { size: 9 }, maxTicksLimit: 5 }, grid: { color: 'rgba(0,0,0,0.04)' }, beginAtZero: true }
+      }
+    })
+  });
+
+  // 2. Doughnut
+  activeCharts.pie = new Chart(
+    document.getElementById('chart-stores').getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: ['With Stock (' + stksW + ')', 'Without (' + stksOut + ')'],
+      datasets: [{ data: [stksW, stksOut],
+        backgroundColor: ['#3d5a80', '#d1d5db'], borderColor: ['#fff','#fff'], borderWidth: 2
+      }]
+    },
+    options: Object.assign({}, baseOpts, {
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { font: { size: 9 }, boxWidth: 12, padding: 6 } },
+        tooltip: { callbacks: { label: function(ctx){ return ' ' + ctx.label; } } }
+      },
+      cutout: '50%'
+    })
+  });
+
+  // 3. Actual vs Expected
+  var velColor  = qty90 >= expected ? '#3d5a80' : '#dc2626';
+  var velBorder = qty90 >= expected ? '#2d4a6e' : '#991b1b';
+  activeCharts.compare = new Chart(
+    document.getElementById('chart-compare').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: ['Actual 90D', 'Expected (12M÷4)'],
+      datasets: [{ data: [qty90, Math.round(expected)],
+        backgroundColor: [velColor, '#d1d5db'], borderColor: [velBorder, '#9ca3af'], borderWidth: 1
+      }]
+    },
+    options: Object.assign({}, baseOpts, {
+      scales: {
+        x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { font: { size: 9 }, maxTicksLimit: 5 }, grid: { color: 'rgba(0,0,0,0.04)' }, beginAtZero: true }
+      },
+      plugins: Object.assign({}, baseOpts.plugins, {
+        tooltip: { callbacks: { label: function(ctx){ return ' ' + fmtQty(ctx.parsed.y) + ' units'; } } }
+      })
+    })
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('item-search').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doSearch();
+  });
+  init(); // hash routing handled inside init() after data loads
+  window.addEventListener('hashchange', handleHash);
+});
+
+
+// ═══════════════════════════════════════════════════════════
+// TAB NAVIGATION
+// ═══════════════════════════════════════════════════════════
+var currentTab = 'item';
+var catSortBy  = 'revenue';
+var catState        = { selectedCat: null, selectedSubcat: null };
+var subcatSortState = { col: 'revenue', dir: 'desc' };
+var catOverviewSort  = { col: 'revenue', dir: 'desc' };
+
+function switchTab(tab) {
+  currentTab = tab;
+
+  // Update tab button styles
+  ['item','category','store'].forEach(function(t) {
+    var btn = document.getElementById('tab-' + t);
+    if (btn) btn.classList.toggle('active', t === tab);
+  });
+
+  // Hide non-item views
+  var catEl   = document.getElementById('category-view');
+  var storeEl = document.getElementById('store-view');
+  if (catEl)   catEl.style.display   = 'none';
+  if (storeEl) storeEl.style.display = 'none';
+
+  if (tab === 'item') {
+    // Restore appropriate item-tab screen
+    if (pipelineData.length) {
+      var loaded = document.getElementById('item-screen').dataset.loaded === 'true';
+      showScreen(loaded ? 'item-screen' : 'welcome-screen');
+    }
+    // If still loading, loading/picker screen is already visible — leave it
+    location.hash = 'item';
+  } else {
+    // Hide all item-tab screens
+    ['loading-screen','picker-screen','welcome-screen','error-screen','item-screen'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+
+    if (tab === 'category') {
+      if (catEl) catEl.style.display = 'block';
+      if (pipelineData.length) renderCategorySummary();
+      // Route to sub-section if catState is set
+      if (catState.selectedSubcat) showSubcatItems(catState.selectedSubcat);
+      else if (catState.selectedCat) showCategoryDetail(catState.selectedCat);
+      else showCatOverview();
+      location.hash = 'category';
+    } else if (tab === 'store') {
+      if (storeEl) storeEl.style.display = 'block';
+      location.hash = 'store';
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// CATEGORY AGGREGATION
+// ═══════════════════════════════════════════════════════════
+function buildCategoryMap() {
+  var cats = {};
+  pipelineData.forEach(function(item) {
+    var cat = item.CATEG_COD;
+    if (!cat) return;
+    if (!cats[cat]) cats[cat] = { name: cat, items: [], subcats: {} };
+    cats[cat].items.push(item);
+    var sc = item.SUBCAT_COD;
+    if (sc) {
+      if (!cats[cat].subcats[sc]) cats[cat].subcats[sc] = [];
+      cats[cat].subcats[sc].push(item);
+    }
+  });
+  return cats;
+}
+
+function renderCategorySummary() {
+  var totalSubcats = new Set(pipelineData.map(function(i){ return i.CATEG_COD + '|' + i.SUBCAT_COD; })).size;
+  var cats = buildCategoryMap();
+  var catCount = Object.keys(cats).length;
+  var totalActive = pipelineData.filter(function(i){ return i.STATUS === 'ACTIVE'; }).length;
+  var totalRev = pipelineData.reduce(function(s,i){ return s + (parseFloat(i.RAW_AMT_90D)||0); }, 0);
+  var notSelling = pipelineData.filter(function(i){ return i.STATUS === 'NOT SELLING'; }).length;
+
+  function setTxt(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+  setTxt('cat-stat-cats',       catCount.toLocaleString());
+  setTxt('cat-stat-subcats',    totalSubcats.toLocaleString());
+  setTxt('cat-stat-active',     totalActive.toLocaleString());
+  setTxt('cat-stat-revenue',    fmtRevMM(totalRev));
+  setTxt('cat-stat-notselling', notSelling.toLocaleString());
+}
+
+function buildCatOverviewThead() {
+  var thead = document.getElementById('cat-overview-thead');
+  if (!thead) return;
+  var cols = [
+    { key: 'name',     label: 'Category',    cls: '' },
+    { key: 'items',    label: 'Items',       cls: 'num' },
+    { key: 'subcats',  label: 'Sub-cats',    cls: 'num' },
+    { key: 'qty',      label: '90D Qty Sold',cls: 'num' },
+    { key: 'revenue',  label: '90D Revenue', cls: 'num' },
+    { key: 'vel',      label: 'Avg Velocity',cls: 'num' },
+    { key: 'trending', label: 'Trending Up', cls: '' },
+    { key: 'status',   label: 'Status',      cls: '' }
+  ];
+  var tr = document.createElement('tr');
+  cols.forEach(function(col) {
+    var th = document.createElement('th');
+    var isActive = catOverviewSort.col === col.key;
+    th.className = (col.cls ? col.cls + ' ' : '') + 'sort-th' + (isActive ? ' sort-active' : '');
+    var icon = isActive ? (catOverviewSort.dir === 'asc' ? '▲' : '▼') : '↕';
+    th.innerHTML = col.label + '<span class="sort-icon">' + icon + '</span>';
+    th.dataset.col = col.key;
+    th.onclick = (function(k){ return function(){ sortCatOverviewBy(k); }; })(col.key);
+    tr.appendChild(th);
+  });
+  thead.innerHTML = '';
+  thead.appendChild(tr);
+}
+
+function sortCatOverviewBy(col) {
+  if (catOverviewSort.col === col) {
+    catOverviewSort.dir = catOverviewSort.dir === 'desc' ? 'asc' : 'desc';
+  } else {
+    catOverviewSort.col = col;
+    catOverviewSort.dir = (col === 'name') ? 'asc' : 'desc';
+  }
+  renderCategoryOverview();
+}
+
+function renderCategoryOverview() {
+  if (!pipelineData.length) return;
+  renderCategorySummary();
+  var cats = buildCategoryMap();
+
+  var catList = Object.values(cats).map(function(cat) {
+    var rev     = cat.items.reduce(function(s,i){ return s+(parseFloat(i.RAW_AMT_90D)||0); },0);
+    var qty     = cat.items.reduce(function(s,i){ return s+(parseFloat(i.RAW_QTY_90D)||0); },0);
+    var vel     = cat.items.reduce(function(s,i){ return s+(parseFloat(i.PCT_RECENT)||0); },0) / cat.items.length;
+    var trendUp = cat.items.filter(function(i){ return (parseFloat(i.PCT_RECENT)||0) > 30; }).length;
+    var ns      = cat.items.filter(function(i){ return i.STATUS === 'NOT SELLING'; }).length;
+    var scCount = Object.keys(cat.subcats).length;
+    return { cat: cat, rev: rev, qty: qty, vel: vel, trendUp: trendUp, ns: ns, scCount: scCount };
+  });
+
+  catList.sort(function(a, b) {
+    var dir = catOverviewSort.dir === 'asc' ? 1 : -1;
+    switch (catOverviewSort.col) {
+      case 'name':     return dir * a.cat.name.localeCompare(b.cat.name);
+      case 'items':    return dir * (a.cat.items.length - b.cat.items.length);
+      case 'subcats':  return dir * (a.scCount - b.scCount);
+      case 'qty':      return dir * (a.qty - b.qty);
+      case 'revenue':  return dir * (a.rev - b.rev);
+      case 'vel':      return dir * (a.vel - b.vel);
+      case 'trending': return dir * (a.trendUp - b.trendUp);
+      case 'status':   return dir * (a.ns - b.ns);
+      default:         return dir * (a.rev - b.rev);
+    }
+  });
+
+  buildCatOverviewThead();
+
+  var tbody = document.getElementById('cat-overview-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  catList.forEach(function(entry) {
+    var cat      = entry.cat;
+    var velCls   = entry.vel > 30 ? 'vel-up' : entry.vel < 20 ? 'vel-down' : 'vel-ss';
+    var velArrow = entry.vel > 30 ? '↑' : entry.vel < 20 ? '↓' : '→';
+    var stsHtml  = entry.ns > 0
+      ? '<span class="status-pill sts-ns">' + entry.ns + ' not selling</span>'
+      : '<span class="status-pill sts-active">all active</span>';
+
+    var tr = document.createElement('tr');
+    tr.onclick = (function(n){ return function(){ showCategoryDetail(n); }; })(cat.name);
+    tr.innerHTML =
+      '<td><a class="cat-link" href="#" data-cat="' + cat.name + '" onclick="showCategoryDetail(this.dataset.cat); return false;">' + cat.name + '</a></td>' +
+      '<td class="num">' + cat.items.length.toLocaleString() + '</td>' +
+      '<td class="num">' + entry.scCount + '</td>' +
+      '<td class="num">' + Math.round(entry.qty).toLocaleString() + '</td>' +
+      '<td class="num">' + fmtAmt(entry.rev) + '</td>' +
+      '<td class="num"><span class="' + velCls + '">' + velArrow + '</span> ' + entry.vel.toFixed(1) + '%</td>' +
+      '<td>' + entry.trendUp + ' of ' + cat.items.length + '</td>' +
+      '<td>' + stsHtml + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// CATEGORY DRILL-DOWN: show sub-categories
+// ─────────────────────────────────────────────────────────
+function showCatOverview() {
+  catState.selectedCat    = null;
+  catState.selectedSubcat = null;
+  renderCategoryOverview();
+  var o = document.getElementById('cat-overview-section');
+  var s = document.getElementById('subcat-section');
+  var i = document.getElementById('items-section');
+  if (o) o.style.display = '';
+  if (s) s.style.display = 'none';
+  if (i) i.style.display = 'none';
+  location.hash = 'category';
+}
+
+// Rebuild sortable subcat table header based on current sort state
+function buildSubcatThead() {
+  var thead = document.getElementById('subcat-thead');
+  if (!thead) return;
+  var cols = [
+    { key: 'name',    label: 'Sub-Category',  cls: '' },
+    { key: 'items',   label: 'Items',          cls: 'num' },
+    { key: 'qty',     label: '90D Qty',        cls: 'num' },
+    { key: 'revenue', label: '90D Revenue',    cls: 'num' },
+    { key: 'pctcat',  label: '% of Cat Rev',   cls: 'num' },
+    { key: 'avgz',    label: 'Avg Z-Score',    cls: 'num' },
+    { key: 'normal',  label: 'Normality',      cls: '' },
+    { key: '_exp',    label: '',               cls: 'acc-toggle-cell' }
+  ];
+  var tr = document.createElement('tr');
+  cols.forEach(function(col) {
+    var th = document.createElement('th');
+    if (col.cls) th.className = col.cls;
+    if (col.key !== '_exp' && col.key !== 'normal') {
+      var isActive = subcatSortState.col === col.key;
+      th.className += ' sort-th' + (isActive ? ' sort-active' : '');
+      var icon = isActive ? (subcatSortState.dir === 'asc' ? '▲' : '▼') : '↕';
+      th.innerHTML = col.label + '<span class="sort-icon">' + icon + '</span>';
+      th.dataset.col = col.key;
+      th.onclick = (function(k){ return function(){ sortSubcatBy(k); }; })(col.key);
+    } else {
+      th.textContent = col.label;
+    }
+    tr.appendChild(th);
+  });
+  thead.innerHTML = '';
+  thead.appendChild(tr);
+}
+
+function sortSubcatBy(col) {
+  if (subcatSortState.col === col) {
+    subcatSortState.dir = subcatSortState.dir === 'desc' ? 'asc' : 'desc';
+  } else {
+    subcatSortState.col = col;
+    subcatSortState.dir = (col === 'name') ? 'asc' : 'desc';
+  }
+  showCategoryDetail(catState.selectedCat);
+}
+
+function showCategoryDetail(catName) {
+  if (!pipelineData.length) return;
+  catState.selectedCat    = catName;
+  catState.selectedSubcat = null;
+
+  var cats = buildCategoryMap();
+  var cat  = cats[catName];
+  if (!cat) return;
+
+  var catTotalRev = cat.items.reduce(function(s,i){ return s+(parseFloat(i.RAW_AMT_90D)||0); },0);
+
+  var el = document.getElementById('subcat-heading');
+  if (el) el.textContent = catName + ' — Sub-Categories (' + Object.keys(cat.subcats).length + ')';
+
+  buildSubcatThead();
+
+  // Build subcat list with pre-computed aggregates
+  var subcatList = Object.keys(cat.subcats).map(function(sc) {
+    var its = cat.subcats[sc];
+    var rev = its.reduce(function(s,i){ return s+(parseFloat(i.RAW_AMT_90D)||0); },0);
+    var qty = its.reduce(function(s,i){ return s+(parseFloat(i.RAW_QTY_90D)||0); },0);
+    var zIt = its.filter(function(i){ return !isNaN(parseFloat(i.Z_SCORE)); });
+    var avgZ = zIt.length > 0
+      ? zIt.reduce(function(s,i){ return s+parseFloat(i.Z_SCORE); },0) / zIt.length
+      : null;
+    return { name: sc, items: its, rev: rev, qty: qty, avgZ: avgZ };
+  });
+
+  subcatList.sort(function(a, b) {
+    var dir = subcatSortState.dir === 'asc' ? 1 : -1;
+    switch (subcatSortState.col) {
+      case 'name':   return dir * a.name.localeCompare(b.name);
+      case 'items':  return dir * (a.items.length - b.items.length);
+      case 'qty':    return dir * (a.qty - b.qty);
+      case 'pctcat':
+      case 'revenue':return dir * (a.rev - b.rev);
+      case 'avgz':   return dir * ((a.avgZ||0) - (b.avgZ||0));
+      default:       return dir * (a.rev - b.rev);
+    }
+  });
+
+  var tbody = document.getElementById('subcat-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  subcatList.forEach(function(sc, idx) {
+    var isTop3   = idx < 3;
+    var scPctNum = catTotalRev > 0 ? (sc.rev / catTotalRev * 100) : 0;
+    var scPct    = scPctNum.toFixed(1);
+    var barW     = Math.min(100, Math.round(scPctNum));
+    var avgZStr  = sc.avgZ !== null ? sc.avgZ.toFixed(2) : '—';
+    var normKey  = catName + '|' + sc.name;
+    var norm     = normalityMap[normKey];
+    var isNormal = norm && norm.NORMAL === 'Yes';
+    var normBadge = isNormal
+      ? '<span class="norm-badge norm-yes">Normal</span>'
+      : '<span class="norm-badge norm-no">Non-Normal</span>';
+    var safeId   = sc.name.replace(/[^a-zA-Z0-9]/g, '_');
+
+    // Main sub-category row
+    var tr = document.createElement('tr');
+    tr.className = 'subcat-row' + (isTop3 ? ' subcat-top' : '');
+    tr.onclick = (function(sid){ return function(){ toggleSubcatAccordion(sid); }; })(safeId);
+    tr.innerHTML =
+      '<td><strong>' + sc.name + '</strong></td>' +
+      '<td class="num">' + sc.items.length + '</td>' +
+      '<td class="num">' + Math.round(sc.qty).toLocaleString() + '</td>' +
+      '<td class="num">' + fmtAmt(sc.rev) + '</td>' +
+      '<td class="num">' +
+        '<div class="sc-pct-wrap">' +
+          '<span>' + scPct + '%</span>' +
+          '<div class="sc-bar-wrap"><div class="sc-bar-fill" style="width:' + barW + '%"></div></div>' +
+        '</div>' +
+      '</td>' +
+      '<td class="num">' + avgZStr + '</td>' +
+      '<td>' + normBadge + '</td>' +
+      '<td class="acc-toggle-cell"><span class="acc-toggle-btn" id="acc-btn-' + safeId + '">►</span></td>';
+    tbody.appendChild(tr);
+
+    // Accordion expansion row (lazy-built on first open)
+    var accTr = document.createElement('tr');
+    accTr.className = 'acc-expand-row';
+    accTr.id = 'acc-row-' + safeId;
+    accTr.style.display = 'none';
+    var accTd = document.createElement('td');
+    accTd.colSpan = 8;
+    var accDiv = document.createElement('div');
+    accDiv.className = 'acc-content';
+    accDiv.id = 'acc-content-' + safeId;
+    accDiv.dataset.subcatName = sc.name;
+    accDiv.dataset.built = '';
+    accTd.appendChild(accDiv);
+    accTr.appendChild(accTd);
+    tbody.appendChild(accTr);
+  });
+
+  var o = document.getElementById('cat-overview-section');
+  var s = document.getElementById('subcat-section');
+  var i = document.getElementById('items-section');
+  if (o) o.style.display = 'none';
+  if (s) s.style.display = '';
+  if (i) i.style.display = 'none';
+  location.hash = 'category/' + catName;
+}
+
+// ─────────────────────────────────────────────────────────
+// ACCORDION: toggle + lazy-build items table inside a sub-category row
+// ─────────────────────────────────────────────────────────
+function toggleSubcatAccordion(safeId) {
+  var row     = document.getElementById('acc-row-' + safeId);
+  var btn     = document.getElementById('acc-btn-' + safeId);
+  var content = document.getElementById('acc-content-' + safeId);
+  if (!row) return;
+
+  var isOpen = row.style.display !== 'none';
+  if (isOpen) {
+    row.style.display = 'none';
+    if (btn) { btn.innerHTML = '►'; btn.classList.remove('open'); }
+  } else {
+    row.style.display = '';
+    if (btn) { btn.innerHTML = '▼'; btn.classList.add('open'); }
+    if (content && !content.dataset.built) {
+      content.dataset.built = '1';
+      buildAccordionItems(content, catState.selectedCat, content.dataset.subcatName, 'rank', 'asc');
+    }
+  }
+}
+
+function buildAccordionItems(container, catName, subcatName, sortCol, sortDir) {
+  var allItems = pipelineData.filter(function(i){
+    return i.CATEG_COD === catName && i.SUBCAT_COD === subcatName;
+  });
+
+  // Pre-compute percentiles (avoids calling computePercentile inside sort comparator)
+  var withPct = allItems.map(function(item) {
+    return { item: item, pct: computePercentile(item, pipelineData, normalityMap).pct };
+  });
+
+  withPct.sort(function(a, b) {
+    var d = sortDir === 'asc' ? 1 : -1;
+    var ai = a.item, bi = b.item;
+    switch (sortCol) {
+      case 'rank':      return d * ((parseInt(ai.SUBCAT_RANK)||999) - (parseInt(bi.SUBCAT_RANK)||999));
+      case 'item_no':   return d * String(ai.ITEM_NO||'').localeCompare(String(bi.ITEM_NO||''));
+      case 'item_name': return d * (ai.ITEM_NAME||'').localeCompare(bi.ITEM_NAME||'');
+      case 'qty90':     return d * ((parseFloat(ai.RAW_QTY_90D)||0) - (parseFloat(bi.RAW_QTY_90D)||0));
+      case 'rev90':     return d * ((parseFloat(ai.RAW_AMT_90D)||0) - (parseFloat(bi.RAW_AMT_90D)||0));
+      case 'zscore':    return d * ((parseFloat(ai.Z_SCORE)||0) - (parseFloat(bi.Z_SCORE)||0));
+      case 'pct':       return d * (a.pct - b.pct);
+      default:          return d * ((parseInt(ai.SUBCAT_RANK)||999) - (parseInt(bi.SUBCAT_RANK)||999));
+    }
+  });
+
+  function sIcon(col) {
+    if (sortCol !== col) return '<span class="sort-icon">↕</span>';
+    return '<span class="sort-icon">' + (sortDir === 'asc' ? '▲' : '▼') + '</span>';
+  }
+  function thCls(col) { return 'sort-th' + (sortCol === col ? ' sort-active' : ''); }
+
+  var rows = withPct.map(function(entry) {
+    var item   = entry.item;
+    var pctVal = entry.pct;
+    var topPct = Math.round((100 - pctVal) * 10) / 10;
+    var pctCls = pctVal >= 75 ? 'pct-green' : pctVal >= 25 ? 'pct-yellow' : 'pct-red';
+    var qty90  = parseFloat(item.RAW_QTY_90D) || 0;
+    var amt90  = parseFloat(item.RAW_AMT_90D) || 0;
+    var status = (item.STATUS || '').trim();
+    var stsCls = status === 'ACTIVE' ? 'sts-active' : status === 'OUT OF STOCK' ? 'sts-oos' : 'sts-ns';
+    var zVal   = !isNaN(parseFloat(item.Z_SCORE)) ? parseFloat(item.Z_SCORE).toFixed(2) : '—';
+    var iNo    = item.ITEM_NO || '';
+    var iName  = item.ITEM_NAME || '—';
+    return '<tr>' +
+      '<td class="num">' + (item.SUBCAT_RANK || '—') + '</td>' +
+      '<td><a href="#" class="item-link" data-item="' + iNo + '" onclick="zoomToItem(this.dataset.item);return false;">' + iNo + '</a></td>' +
+      '<td><a href="#" class="item-link" data-item="' + iNo + '" onclick="zoomToItem(this.dataset.item);return false;">' + iName + '</a></td>' +
+      '<td class="num">' + Math.round(qty90).toLocaleString() + '</td>' +
+      '<td class="num">' + fmtAmt(amt90) + '</td>' +
+      '<td class="num">' + zVal + '</td>' +
+      '<td class="num"><span class="pct-badge ' + pctCls + '">Top ' + topPct + '%</span></td>' +
+      '<td><span class="' + stsCls + '">' + (status || '—') + '</span></td>' +
+    '</tr>';
+  }).join('');
+
+  container.innerHTML =
+    '<table class="items-inner-table">' +
+    '<thead><tr>' +
+      '<th class="num '  + thCls('rank')      + '" data-col="rank">Rank '      + sIcon('rank')      + '</th>' +
+      '<th class="'      + thCls('item_no')   + '" data-col="item_no">Item # '  + sIcon('item_no')   + '</th>' +
+      '<th class="'      + thCls('item_name') + '" data-col="item_name">Item Name ' + sIcon('item_name') + '</th>' +
+      '<th class="num '  + thCls('qty90')     + '" data-col="qty90">90D Qty '  + sIcon('qty90')     + '</th>' +
+      '<th class="num '  + thCls('rev90')     + '" data-col="rev90">90D Rev '  + sIcon('rev90')     + '</th>' +
+      '<th class="num '  + thCls('zscore')    + '" data-col="zscore">Z-Score ' + sIcon('zscore')    + '</th>' +
+      '<th class="num '  + thCls('pct')       + '" data-col="pct">Percentile ' + sIcon('pct')       + '</th>' +
+      '<th>Status</th>' +
+    '</tr></thead>' +
+    '<tbody>' + rows + '</tbody>' +
+    '</table>';
+
+  // Wire up sort click handlers after DOM insertion
+  container.querySelectorAll('th.sort-th').forEach(function(th) {
+    th.onclick = function() {
+      var col = th.dataset.col;
+      var newDir;
+      if (sortCol === col) {
+        newDir = sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        newDir = (col === 'rank' || col === 'item_no' || col === 'item_name') ? 'asc' : 'desc';
+      }
+      container.dataset.built = '1';
+      buildAccordionItems(container, catName, subcatName, col, newDir);
+    };
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// CATEGORY NAV: back to sub-category table
+// ─────────────────────────────────────────────────────────
+function showSubcatDetail() {
+  catState.selectedSubcat = null;
+  showCategoryDetail(catState.selectedCat);
+}
+
+// showSubcatItems: navigate to sub-category table view and open the named accordion
+function showSubcatItems(subcatName) {
+  if (!pipelineData.length) return;
+  // If subcat detail isn't visible, render it first
+  var subcatSection = document.getElementById('subcat-section');
+  if (!subcatSection || subcatSection.style.display === 'none') {
+    showCategoryDetail(catState.selectedCat);
+  }
+  catState.selectedSubcat = subcatName;
+  var safeId = subcatName.replace(/[^a-zA-Z0-9]/g, '_');
+  var row = document.getElementById('acc-row-' + safeId);
+  if (row && row.style.display === 'none') {
+    toggleSubcatAccordion(safeId);
+  }
+  location.hash = 'category/' + catState.selectedCat + '/' + subcatName;
+}
+
+// ─────────────────────────────────────────────────────────
+// CROSS-VIEW: jump to item zoom
+// ─────────────────────────────────────────────────────────
+function zoomToItem(itemNo) {
+  switchTab('item');
+  document.getElementById('item-search').value = itemNo;
+  doSearch();
+  window.scrollTo(0, 0);
+}
+
+// ═══════════════════════════════════════════════════════════
+// HASH ROUTING
+// ═══════════════════════════════════════════════════════════
+function handleHash() {
+  var hash  = (location.hash || '').replace('#', '').trim();
+  if (!hash) hash = 'item/4000';
+  var parts = hash.split('/');
+  var tab   = parts[0] || 'item';
+
+  if (tab === 'category') {
+    switchTab('category');
+    if (parts[1] && pipelineData.length) {
+      showCategoryDetail(parts[1]);
+      if (parts[2]) showSubcatItems(parts[2]);
+    }
+  } else if (tab === 'store') {
+    switchTab('store');
+  } else {
+    // item tab (default)
+    switchTab('item');
+    if (parts[1] && pipelineData.length) {
+      document.getElementById('item-search').value = parts[1];
+      doSearch();
+    }
+  }
+}
+
+</script>
+
+</body>
+</html> + (parseFloat(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtRevMM(n) {
+  var v = parseFloat(n) || 0;
+  if (v >= 1000000) return '
+
+// ─────────────────────────────────────────────────────────
+// SCREEN MANAGEMENT
+// ─────────────────────────────────────────────────────────
+function showScreen(id) {
+  ['loading-screen','picker-screen','welcome-screen','error-screen'].forEach(function(s) {
+    var el = document.getElementById(s);
+    if (el) el.style.display = 'none';
+  });
+  document.getElementById('item-screen').style.display = 'none';
+  var target = document.getElementById(id);
+  if (target) target.style.display = (id === 'item-screen') ? 'block' : 'flex';
+}
+
+// ─────────────────────────────────────────────────────────
+// NAV STATS
+// ─────────────────────────────────────────────────────────
+function updateNavStat() {
+  var count = pipelineData.length;
+  var subcats = new Set(pipelineData.map(function(i){ return i.CATEG_COD + '|' + i.SUBCAT_COD; })).size;
+  var normCount = Object.keys(normalityMap).length;
+  var ts = DataLoader.getLastLoaded();
+  var timeStr = ts ? ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  document.getElementById('nav-stat').textContent =
+    count.toLocaleString() + ' items · ' + subcats + ' sub-cats' + (timeStr ? ' · ' + timeStr : '');
+  document.getElementById('welcome-stats').textContent =
+    count.toLocaleString() + ' items · ' + subcats + ' sub-categories · ' + normCount + ' normality records loaded';
+  document.getElementById('refresh-btn').disabled = false;
+  var footer = DataLoader.getLastLoaded();
+  if (footer) {
+    document.getElementById('dash-footer').textContent =
+      'CK Analytics v1.0 POC · Data loaded ' + footer.toLocaleDateString() + ' ' +
+      footer.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// INIT & REFRESH
+// ─────────────────────────────────────────────────────────
+async function init() {
+  showScreen('loading-screen');
+  try {
+    var result = await DataLoader.loadAll();
+    pipelineData = result.pipeline;
+    normalityMap = result.normality;
+    try {
+      updateNavStat();
+      showScreen('welcome-screen');
+      document.getElementById('item-search').focus();
+      // Read hash to determine initial view; default to item 4000
+      var hash  = (location.hash || '').replace('#', '').trim();
+      var parts = hash.split('/');
+      var initTab = parts[0] || 'item';
+      if (initTab === 'category') {
+        switchTab('category');
+        if (parts[1]) { showCategoryDetail(parts[1]); if (parts[2]) showSubcatItems(parts[2]); }
+      } else if (initTab === 'store') {
+        switchTab('store');
+      } else {
+        var initItem = parts[1] || '4000';
+        doSearch(initItem);
+      }
+    } catch(uiErr) {
+      console.error('[CK] UI transition error after data load:', uiErr);
+    }
+  } catch(e) {
+    console.error('[CK] Data load failed, showing file picker:', e);
+    fileMode = true;
+    showScreen('picker-screen');
+  }
+}
+
+async function refreshData() {
+  if (fileMode) { showScreen('picker-screen'); return; }
+  var btn = document.getElementById('refresh-btn');
+  btn.textContent = '↻ Refreshing…';
+  btn.disabled = true;
+  try {
+    var result = await DataLoader.refresh();
+    pipelineData = result.pipeline;
+    normalityMap = result.normality;
+    updateNavStat();
+    btn.textContent = '↻ Refresh';
+  } catch(e) {
+    btn.textContent = '↻ Refresh';
+    btn.disabled = false;
+    alert('Could not refresh data.');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// FILE PICKER (file:// fallback)
+// ─────────────────────────────────────────────────────────
+function loadFromFiles() {
+  var pInput = document.getElementById('fp-pipeline');
+  var nInput = document.getElementById('fp-normality');
+  if (!pInput.files || !pInput.files[0]) { alert('Please select the Pipeline Data CSV file.'); return; }
+  if (!nInput.files || !nInput.files[0]) { alert('Please select the Normality Results CSV file.'); return; }
+
+  showScreen('loading-screen');
+  document.getElementById('load-msg').textContent = 'Reading files…';
+
+  var results = {};
+  function tryProcess() {
+    if (results.pipeline !== undefined && results.normality !== undefined) {
+      processFromText(results.pipeline, results.normality);
+    }
+  }
+
+  var r1 = new FileReader();
+  r1.onload = function(e) { results.pipeline = e.target.result; tryProcess(); };
+  r1.onerror = function() { alert('Could not read pipeline CSV.'); };
+  r1.readAsText(pInput.files[0]);
+
+  var r2 = new FileReader();
+  r2.onload = function(e) { results.normality = e.target.result; tryProcess(); };
+  r2.onerror = function() { alert('Could not read normality CSV.'); };
+  r2.readAsText(nInput.files[0]);
+}
+
+function processFromText(pText, nText) {
+  document.getElementById('load-msg').textContent = 'Parsing data…';
+  setTimeout(function() {
+    try {
+      pipelineData = Papa.parse(pText, {
+        header: true, skipEmptyLines: true,
+        transformHeader: function(h){ return h.trim().replace(/^\uFEFF/, ''); }
+      }).data;
+
+      var rows = Papa.parse(nText, {
+        header: true, skipEmptyLines: true,
+        transformHeader: function(h){ return h.trim().replace(/^\uFEFF/, ''); }
+      }).data;
+      normalityMap = {};
+      rows.forEach(function(r){ normalityMap[r.CATEG_COD + '|' + r.SUBCAT_COD] = r; });
+
+      DataLoader._state.pipelineData = pipelineData;
+      DataLoader._state.normalityMap = normalityMap;
+      DataLoader._state.lastLoaded = new Date();
+
+      updateNavStat();
+      showScreen('welcome-screen');
+      document.getElementById('item-search').focus();
+      doSearch('4000');
+    } catch(err) {
+      console.error('[CK] processFromText error:', err);
+      var msg = document.getElementById('load-msg');
+      msg.textContent = '\u274C Error: ' + err.message;
+      msg.style.color = '#dc2626';
+    }
+  }, 20);
+}
+
+// ─────────────────────────────────────────────────────────
+// SEARCH
+// ─────────────────────────────────────────────────────────
+function doSearch(itemNo) {
+  var q = (itemNo ? String(itemNo) : document.getElementById('item-search').value).trim().toUpperCase();
+  if (itemNo) document.getElementById('item-search').value = q;
+  if (!q) return;
+  if (!pipelineData.length) { alert('Data is still loading — please wait.'); return; }
+  var item = pipelineData.find(function(i){ return (i.ITEM_NO || '').trim().toUpperCase() === q; });
+  if (!item) {
+    document.getElementById('error-msg').textContent =
+      'No item found for "' + q + '". Check the number and try again.';
+    showScreen('error-screen');
+    return;
+  }
+  renderItem(item);
+}
+
+function clearView() {
+  document.getElementById('item-search').value = '';
+  Object.values(activeCharts).forEach(function(c){ c.destroy(); });
+  activeCharts = {};
+  if (pipelineData.length) showScreen('welcome-screen');
+}
+
+// ─────────────────────────────────────────────────────────
+// RENDER ITEM
+// ─────────────────────────────────────────────────────────
+function renderItem(item) {
+  var qty90     = parseFloat(item.RAW_QTY_90D)      || 0;
+  var amt90     = parseFloat(item.RAW_AMT_90D)      || 0;
+  var qty12m    = parseFloat(item.RAW_QTY_12M_TOTAL) || 0;
+  var amt12m    = parseFloat(item.RAW_AMT_12M_TOTAL) || 0;
+  var pctRecent = parseFloat(item.PCT_RECENT)        || 0;
+  var txnCount  = parseInt(item.TXN_COUNT)           || 0;
+  var rankNum   = parseInt(item.SUBCAT_RANK)         || 0;
+  var rankTotal = parseInt(item.SUBCAT_TOTAL)  || parseInt(item.PEER_COUNT) || 0;
+
+  // Percentile
+  var pResult    = computePercentile(item, pipelineData, normalityMap);
+  var pctR       = pResult.pct;
+  var method     = pResult.method;
+  var topPct     = Math.round((100 - pctR) * 10) / 10;
+  var topPctHdr  = rankTotal > 0 ? Math.round((1 - (rankNum - 1) / rankTotal) * 100) : 0;
+
+  // ── Header ──
+  document.getElementById('h-name').textContent   = item.ITEM_NAME || item.ITEM_NO;
+  document.getElementById('h-itemno').textContent = '# ' + item.ITEM_NO;
+  document.getElementById('h-rank').textContent   = 'Rank ' + rankNum + ' of ' + rankTotal + '  (top ' + topPctHdr + '%)';
+  document.getElementById('h-categ').textContent  = item.CATEG_COD;
+  document.getElementById('h-subcat').textContent = item.SUBCAT_COD;
+  document.getElementById('h-method').textContent = item.RANK_METHOD || '—';
+  document.getElementById('h-peers').textContent  = item.PEER_COUNT  || '—';
+
+  // ── KPI: 90-day ──
+  document.getElementById('k-qty90').textContent = fmtQty(qty90);
+  document.getElementById('k-amt90').textContent = fmtAmt(amt90);
+  document.getElementById('k-txn').textContent   = txnCount.toLocaleString() + ' transactions';
+
+  // ── KPI: 30-day (est) ──
+  document.getElementById('k-qty30').textContent = fmtQty(qty90 / 3);
+  document.getElementById('k-amt30').textContent = fmtAmt(amt90 / 3);
+
+  // ── KPI: 7-day (est) ──
+  document.getElementById('k-qty7').textContent  = fmtQty(qty90 / (90 / 7));
+  document.getElementById('k-amt7').textContent  = fmtAmt(amt90 / (90 / 7));
+
+  // ── KPI: Velocity ──
+  var velCls = 'vel-ss', velLbl = 'Steady';
+  if (pctRecent > 30)      { velCls = 'vel-up';   velLbl = 'Trending Up ↑'; }
+  else if (pctRecent < 20) { velCls = 'vel-down'; velLbl = 'Trending Down ↓'; }
+  document.getElementById('k-vel').innerHTML  = '<span class="' + velCls + '">' + velLbl + '</span>';
+  document.getElementById('k-pct').textContent = pctRecent.toFixed(1) + '% of 12M sales in last 90D';
+
+  // ── KPI: Status ──
+  var status = (item.STATUS || '').trim();
+  var stsCls = status === 'ACTIVE' ? 'sts-active' : status === 'OUT OF STOCK' ? 'sts-oos' : 'sts-ns';
+  document.getElementById('k-status').innerHTML    = '<span class="' + stsCls + '">' + (status || '—') + '</span>';
+  document.getElementById('k-stock').textContent   = fmtQty(item.QTY_AVAIL_ALL_STORES) + ' units available';
+  document.getElementById('k-stock-note').textContent = (item.STORES_WITH_STOCK || 0) + ' stores with stock';
+
+  // ── Rank Strip ──
+  document.getElementById('rank-main').innerHTML =
+    'Sub-category rank: <strong>' + rankNum + '</strong> of <strong>' + rankTotal + '</strong>' +
+    ' — <span class="rank-pct">Top ' + topPct + '%</span> of ' + item.SUBCAT_COD + ' items';
+  document.getElementById('rank-method').textContent = 'Percentile method: ' + method;
+  document.getElementById('rank-bar').style.width    = Math.min(100, pctR) + '%';
+  document.getElementById('rank-bar-lbl').textContent = 'Top ' + topPct + '%';
+
+  // ── Inventory Table ──
+  var invBody = document.getElementById('inv-body');
+  invBody.innerHTML = '';
+  var aggRow = invBody.insertRow();
+  aggRow.className = 'agg-row';
+  var aggCols = [
+    { v: 'All Stores', cls: '' },
+    { v: fmtQty(item.QTY_ON_HND_ALL_STORES), cls: 'num' },
+    { v: fmtQty(item.QTY_AVAIL_ALL_STORES),  cls: 'num' },
+    { v: item.STORES_WITH_STOCK || '—', cls: 'num' },
+    { v: fmtQty(qty12m), cls: 'num' },
+    { v: fmtAmt(amt12m), cls: 'num' },
+    { v: '<span class="' + stsCls + '">' + (status || '—') + '</span>', cls: '', html: true }
+  ];
+  aggCols.forEach(function(col) {
+    var td = aggRow.insertCell();
+    if (col.cls) td.className = col.cls;
+    if (col.html) td.innerHTML = col.v; else td.textContent = col.v;
+  });
+  var noteRow = invBody.insertRow();
+  noteRow.className = 'note-row';
+  var ntd = noteRow.insertCell();
+  ntd.colSpan = 7;
+  ntd.textContent = 'Per-store detail requires IM_INV join — not yet available in this POC.';
+
+  // ── Show & Charts ──
+  document.getElementById('item-screen').dataset.loaded = 'true';
+  showScreen('item-screen');
+  Object.values(activeCharts).forEach(function(c){ c.destroy(); });
+  activeCharts = {};
+  renderCharts(item, qty90, amt90);
+}
+
+// ─────────────────────────────────────────────────────────
+// CHARTS
+// ─────────────────────────────────────────────────────────
+var baseOpts = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      mode: 'index', intersect: false,
+      bodyFont:  { family: 'Inter, system-ui, sans-serif', size: 11 },
+      titleFont: { family: 'Inter, system-ui, sans-serif', size: 11 }
+    }
+  }
+};
+
+function syntheticTrend(totalQty, days) {
+  var dailyAvg = totalQty / days;
+  var labels = [], data = [], now = new Date();
+  for (var d = days - 1; d >= 0; d--) {
+    var date = new Date(now);
+    date.setDate(date.getDate() - d);
+    labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    var dow = date.getDay();
+    var wk  = (dow === 0 || dow === 6) ? 1.25 : 0.92;
+    data.push(Math.max(0, Math.round(dailyAvg * wk * (0.65 + Math.random() * 0.7))));
+  }
+  return { labels: labels, data: data };
+}
+
+function renderCharts(item, qty90, amt90) {
+  var qty12m  = parseFloat(item.RAW_QTY_12M_TOTAL) || 0;
+  var stksW   = parseInt(item.STORES_WITH_STOCK)   || 0;
+  var maxSt   = Math.max(
+    pipelineData.reduce(function(m,i){ return Math.max(m, parseInt(i.STORE_COUNT)||0); }, 0),
+    stksW
+  );
+  var stksOut  = Math.max(0, maxSt - stksW);
+  var expected = qty12m / 4;
+
+  // 1. Trend line
+  var trend = syntheticTrend(qty90, 90);
+  activeCharts.trend = new Chart(
+    document.getElementById('chart-trend').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: trend.labels,
+      datasets: [{ data: trend.data,
+        borderColor: '#3d5a80', backgroundColor: 'rgba(61,90,128,0.07)',
+        borderWidth: 1.5, fill: true, tension: 0.35, pointRadius: 0, pointHoverRadius: 3
+      }]
+    },
+    options: Object.assign({}, baseOpts, {
+      scales: {
+        x: { ticks: { font: { size: 9 }, maxTicksLimit: 13, maxRotation: 0 }, grid: { color: 'rgba(0,0,0,0.04)' } },
+        y: { ticks: { font: { size: 9 }, maxTicksLimit: 5 }, grid: { color: 'rgba(0,0,0,0.04)' }, beginAtZero: true }
+      }
+    })
+  });
+
+  // 2. Doughnut
+  activeCharts.pie = new Chart(
+    document.getElementById('chart-stores').getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: ['With Stock (' + stksW + ')', 'Without (' + stksOut + ')'],
+      datasets: [{ data: [stksW, stksOut],
+        backgroundColor: ['#3d5a80', '#d1d5db'], borderColor: ['#fff','#fff'], borderWidth: 2
+      }]
+    },
+    options: Object.assign({}, baseOpts, {
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { font: { size: 9 }, boxWidth: 12, padding: 6 } },
+        tooltip: { callbacks: { label: function(ctx){ return ' ' + ctx.label; } } }
+      },
+      cutout: '50%'
+    })
+  });
+
+  // 3. Actual vs Expected
+  var velColor  = qty90 >= expected ? '#3d5a80' : '#dc2626';
+  var velBorder = qty90 >= expected ? '#2d4a6e' : '#991b1b';
+  activeCharts.compare = new Chart(
+    document.getElementById('chart-compare').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: ['Actual 90D', 'Expected (12M÷4)'],
+      datasets: [{ data: [qty90, Math.round(expected)],
+        backgroundColor: [velColor, '#d1d5db'], borderColor: [velBorder, '#9ca3af'], borderWidth: 1
+      }]
+    },
+    options: Object.assign({}, baseOpts, {
+      scales: {
+        x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { font: { size: 9 }, maxTicksLimit: 5 }, grid: { color: 'rgba(0,0,0,0.04)' }, beginAtZero: true }
+      },
+      plugins: Object.assign({}, baseOpts.plugins, {
+        tooltip: { callbacks: { label: function(ctx){ return ' ' + fmtQty(ctx.parsed.y) + ' units'; } } }
+      })
+    })
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('item-search').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doSearch();
+  });
+  init(); // hash routing handled inside init() after data loads
+  window.addEventListener('hashchange', handleHash);
+});
+
+
+// ═══════════════════════════════════════════════════════════
+// TAB NAVIGATION
+// ═══════════════════════════════════════════════════════════
+var currentTab = 'item';
+var catSortBy  = 'revenue';
+var catState        = { selectedCat: null, selectedSubcat: null };
+var subcatSortState = { col: 'revenue', dir: 'desc' };
+
+function switchTab(tab) {
+  currentTab = tab;
+
+  // Update tab button styles
+  ['item','category','store'].forEach(function(t) {
+    var btn = document.getElementById('tab-' + t);
+    if (btn) btn.classList.toggle('active', t === tab);
+  });
+
+  // Hide non-item views
+  var catEl   = document.getElementById('category-view');
+  var storeEl = document.getElementById('store-view');
+  if (catEl)   catEl.style.display   = 'none';
+  if (storeEl) storeEl.style.display = 'none';
+
+  if (tab === 'item') {
+    // Restore appropriate item-tab screen
+    if (pipelineData.length) {
+      var loaded = document.getElementById('item-screen').dataset.loaded === 'true';
+      showScreen(loaded ? 'item-screen' : 'welcome-screen');
+    }
+    // If still loading, loading/picker screen is already visible — leave it
+    location.hash = 'item';
+  } else {
+    // Hide all item-tab screens
+    ['loading-screen','picker-screen','welcome-screen','error-screen','item-screen'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+
+    if (tab === 'category') {
+      if (catEl) catEl.style.display = 'block';
+      if (pipelineData.length) renderCategorySummary();
+      // Route to sub-section if catState is set
+      if (catState.selectedSubcat) showSubcatItems(catState.selectedSubcat);
+      else if (catState.selectedCat) showCategoryDetail(catState.selectedCat);
+      else showCatOverview();
+      location.hash = 'category';
+    } else if (tab === 'store') {
+      if (storeEl) storeEl.style.display = 'block';
+      location.hash = 'store';
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// CATEGORY AGGREGATION
+// ═══════════════════════════════════════════════════════════
+function buildCategoryMap() {
+  var cats = {};
+  pipelineData.forEach(function(item) {
+    var cat = item.CATEG_COD;
+    if (!cat) return;
+    if (!cats[cat]) cats[cat] = { name: cat, items: [], subcats: {} };
+    cats[cat].items.push(item);
+    var sc = item.SUBCAT_COD;
+    if (sc) {
+      if (!cats[cat].subcats[sc]) cats[cat].subcats[sc] = [];
+      cats[cat].subcats[sc].push(item);
+    }
+  });
+  return cats;
+}
+
+function renderCategorySummary() {
+  var totalSubcats = new Set(pipelineData.map(function(i){ return i.CATEG_COD + '|' + i.SUBCAT_COD; })).size;
+  var cats = buildCategoryMap();
+  var catCount = Object.keys(cats).length;
+  var totalActive = pipelineData.filter(function(i){ return i.STATUS === 'ACTIVE'; }).length;
+  var totalRev = pipelineData.reduce(function(s,i){ return s + (parseFloat(i.RAW_AMT_90D)||0); }, 0);
+  var notSelling = pipelineData.filter(function(i){ return i.STATUS === 'NOT SELLING'; }).length;
+
+  function setTxt(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+  setTxt('cat-stat-cats',       catCount.toLocaleString());
+  setTxt('cat-stat-subcats',    totalSubcats.toLocaleString());
+  setTxt('cat-stat-active',     totalActive.toLocaleString());
+  setTxt('cat-stat-revenue',    '$' + (totalRev / 1000).toFixed(1) + 'K');
+  setTxt('cat-stat-notselling', notSelling.toLocaleString());
+}
+
+function renderCategoryOverview() {
+  if (!pipelineData.length) return;
+  renderCategorySummary();
+  var cats = buildCategoryMap();
+
+  // Pre-compute per-category aggregates
+  var catList = Object.values(cats).map(function(cat) {
+    var rev = cat.items.reduce(function(s,i){ return s+(parseFloat(i.RAW_AMT_90D)||0); },0);
+    var qty = cat.items.reduce(function(s,i){ return s+(parseFloat(i.RAW_QTY_90D)||0); },0);
+    return { cat: cat, rev: rev, qty: qty };
+  });
+  var maxRev = catList.reduce(function(m,c){ return Math.max(m, c.rev); }, 0);
+
+  catList.sort(function(a, b) {
+    if (catSortBy === 'revenue') return b.rev - a.rev;
+    if (catSortBy === 'qty')     return b.qty - a.qty;
+    if (catSortBy === 'items')   return b.cat.items.length - a.cat.items.length;
+    return a.cat.name.localeCompare(b.cat.name);
+  });
+
+  var grid = document.getElementById('cat-cards');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  catList.forEach(function(entry) {
+    var cat      = entry.cat;
+    var totalRev = entry.rev;
+    var totalQty = entry.qty;
+    var avgVel   = cat.items.reduce(function(s,i){ return s+(parseFloat(i.PCT_RECENT)||0); },0) / cat.items.length;
+    var oos      = cat.items.filter(function(i){ return i.STATUS==='OUT OF STOCK'; }).length;
+    var ns       = cat.items.filter(function(i){ return i.STATUS==='NOT SELLING'; }).length;
+    var scCount  = Object.keys(cat.subcats).length;
+    var trendUp  = cat.items.filter(function(i){ return (parseFloat(i.PCT_RECENT)||0) > 30; }).length;
+    var barPct   = maxRev > 0 ? Math.min(100, Math.round((totalRev / maxRev) * 100)) : 0;
+
+    var velArrow, velClass;
+    if (avgVel > 30)      { velArrow = '↑'; velClass = 'vel-up'; }
+    else if (avgVel < 20) { velArrow = '↓'; velClass = 'vel-down'; }
+    else                  { velArrow = '→'; velClass = 'vel-ss'; }
+
+    var oosPill = oos > 0 ? '<span class="status-pill sts-oos">' + oos + ' OOS</span>' : '';
+    var nsPill  = ns  > 0 ? '<span class="status-pill sts-ns">'  + ns  + ' not selling</span>' : '';
+
+    var card = document.createElement('div');
+    card.className = 'cat-card';
+    card.onclick = function(){ showCategoryDetail(cat.name); };
+
+    card.innerHTML =
+      '<div class="cat-card-name-row">' +
+        '<div class="cat-card-name">' + cat.name + '</div>' +
+        '<span class="cat-drill-hint">View →</span>' +
+      '</div>' +
+      '<div class="cat-rev-bar-wrap"><div class="cat-rev-bar-fill" style="width:' + barPct + '%"></div></div>' +
+      '<div class="cat-card-stats">' +
+        '<div class="cat-stat-row"><span class="cat-stat-lbl">Items</span><span class="cat-stat-val">' + cat.items.length.toLocaleString() + '</span></div>' +
+        '<div class="cat-stat-row"><span class="cat-stat-lbl">Sub-categories</span><span class="cat-stat-val">' + scCount + '</span></div>' +
+        '<div class="cat-stat-row"><span class="cat-stat-lbl">90D Qty Sold</span><span class="cat-stat-val">' + Math.round(totalQty).toLocaleString() + '</span></div>' +
+        '<div class="cat-stat-row"><span class="cat-stat-lbl">90D Revenue</span><span class="cat-stat-val cat-rev">' + fmtAmt(totalRev) + '</span></div>' +
+        '<div class="cat-stat-row"><span class="cat-stat-lbl">Avg Velocity</span>' +
+          '<span class="cat-stat-val"><span class="' + velClass + '">' + velArrow + '</span> ' + avgVel.toFixed(1) + '%</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="cat-card-status">' +
+        '<span class="status-pill sts-active">' + trendUp + ' of ' + cat.items.length + ' trending up</span>' +
+        oosPill + nsPill +
+      '</div>';
+
+    grid.appendChild(card);
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// CATEGORY DRILL-DOWN: show sub-categories
+// ─────────────────────────────────────────────────────────
+function showCatOverview() {
+  catState.selectedCat    = null;
+  catState.selectedSubcat = null;
+  renderCategoryOverview();
+  var o = document.getElementById('cat-overview-section');
+  var s = document.getElementById('subcat-section');
+  var i = document.getElementById('items-section');
+  if (o) o.style.display = '';
+  if (s) s.style.display = 'none';
+  if (i) i.style.display = 'none';
+  location.hash = 'category';
+}
+
+// Rebuild sortable subcat table header based on current sort state
+function buildSubcatThead() {
+  var thead = document.getElementById('subcat-thead');
+  if (!thead) return;
+  var cols = [
+    { key: 'name',    label: 'Sub-Category',  cls: '' },
+    { key: 'items',   label: 'Items',          cls: 'num' },
+    { key: 'qty',     label: '90D Qty',        cls: 'num' },
+    { key: 'revenue', label: '90D Revenue',    cls: 'num' },
+    { key: 'pctcat',  label: '% of Cat Rev',   cls: 'num' },
+    { key: 'avgz',    label: 'Avg Z-Score',    cls: 'num' },
+    { key: 'normal',  label: 'Normality',      cls: '' },
+    { key: '_exp',    label: '',               cls: 'acc-toggle-cell' }
+  ];
+  var tr = document.createElement('tr');
+  cols.forEach(function(col) {
+    var th = document.createElement('th');
+    if (col.cls) th.className = col.cls;
+    if (col.key !== '_exp' && col.key !== 'normal') {
+      var isActive = subcatSortState.col === col.key;
+      th.className += ' sort-th' + (isActive ? ' sort-active' : '');
+      var icon = isActive ? (subcatSortState.dir === 'asc' ? '▲' : '▼') : '↕';
+      th.innerHTML = col.label + '<span class="sort-icon">' + icon + '</span>';
+      th.dataset.col = col.key;
+      th.onclick = (function(k){ return function(){ sortSubcatBy(k); }; })(col.key);
+    } else {
+      th.textContent = col.label;
+    }
+    tr.appendChild(th);
+  });
+  thead.innerHTML = '';
+  thead.appendChild(tr);
+}
+
+function sortSubcatBy(col) {
+  if (subcatSortState.col === col) {
+    subcatSortState.dir = subcatSortState.dir === 'desc' ? 'asc' : 'desc';
+  } else {
+    subcatSortState.col = col;
+    subcatSortState.dir = (col === 'name') ? 'asc' : 'desc';
+  }
+  showCategoryDetail(catState.selectedCat);
+}
+
+function showCategoryDetail(catName) {
+  if (!pipelineData.length) return;
+  catState.selectedCat    = catName;
+  catState.selectedSubcat = null;
+
+  var cats = buildCategoryMap();
+  var cat  = cats[catName];
+  if (!cat) return;
+
+  var catTotalRev = cat.items.reduce(function(s,i){ return s+(parseFloat(i.RAW_AMT_90D)||0); },0);
+
+  var el = document.getElementById('subcat-heading');
+  if (el) el.textContent = catName + ' — Sub-Categories (' + Object.keys(cat.subcats).length + ')';
+
+  buildSubcatThead();
+
+  // Build subcat list with pre-computed aggregates
+  var subcatList = Object.keys(cat.subcats).map(function(sc) {
+    var its = cat.subcats[sc];
+    var rev = its.reduce(function(s,i){ return s+(parseFloat(i.RAW_AMT_90D)||0); },0);
+    var qty = its.reduce(function(s,i){ return s+(parseFloat(i.RAW_QTY_90D)||0); },0);
+    var zIt = its.filter(function(i){ return !isNaN(parseFloat(i.Z_SCORE)); });
+    var avgZ = zIt.length > 0
+      ? zIt.reduce(function(s,i){ return s+parseFloat(i.Z_SCORE); },0) / zIt.length
+      : null;
+    return { name: sc, items: its, rev: rev, qty: qty, avgZ: avgZ };
+  });
+
+  subcatList.sort(function(a, b) {
+    var dir = subcatSortState.dir === 'asc' ? 1 : -1;
+    switch (subcatSortState.col) {
+      case 'name':   return dir * a.name.localeCompare(b.name);
+      case 'items':  return dir * (a.items.length - b.items.length);
+      case 'qty':    return dir * (a.qty - b.qty);
+      case 'pctcat':
+      case 'revenue':return dir * (a.rev - b.rev);
+      case 'avgz':   return dir * ((a.avgZ||0) - (b.avgZ||0));
+      default:       return dir * (a.rev - b.rev);
+    }
+  });
+
+  var tbody = document.getElementById('subcat-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  subcatList.forEach(function(sc, idx) {
+    var isTop3   = idx < 3;
+    var scPctNum = catTotalRev > 0 ? (sc.rev / catTotalRev * 100) : 0;
+    var scPct    = scPctNum.toFixed(1);
+    var barW     = Math.min(100, Math.round(scPctNum));
+    var avgZStr  = sc.avgZ !== null ? sc.avgZ.toFixed(2) : '—';
+    var normKey  = catName + '|' + sc.name;
+    var norm     = normalityMap[normKey];
+    var isNormal = norm && norm.NORMAL === 'Yes';
+    var normBadge = isNormal
+      ? '<span class="norm-badge norm-yes">Normal</span>'
+      : '<span class="norm-badge norm-no">Non-Normal</span>';
+    var safeId   = sc.name.replace(/[^a-zA-Z0-9]/g, '_');
+
+    // Main sub-category row
+    var tr = document.createElement('tr');
+    tr.className = 'subcat-row' + (isTop3 ? ' subcat-top' : '');
+    tr.onclick = (function(sid){ return function(){ toggleSubcatAccordion(sid); }; })(safeId);
+    tr.innerHTML =
+      '<td><strong>' + sc.name + '</strong></td>' +
+      '<td class="num">' + sc.items.length + '</td>' +
+      '<td class="num">' + Math.round(sc.qty).toLocaleString() + '</td>' +
+      '<td class="num">' + fmtAmt(sc.rev) + '</td>' +
+      '<td class="num">' +
+        '<div class="sc-pct-wrap">' +
+          '<span>' + scPct + '%</span>' +
+          '<div class="sc-bar-wrap"><div class="sc-bar-fill" style="width:' + barW + '%"></div></div>' +
+        '</div>' +
+      '</td>' +
+      '<td class="num">' + avgZStr + '</td>' +
+      '<td>' + normBadge + '</td>' +
+      '<td class="acc-toggle-cell"><span class="acc-toggle-btn" id="acc-btn-' + safeId + '">►</span></td>';
+    tbody.appendChild(tr);
+
+    // Accordion expansion row (lazy-built on first open)
+    var accTr = document.createElement('tr');
+    accTr.className = 'acc-expand-row';
+    accTr.id = 'acc-row-' + safeId;
+    accTr.style.display = 'none';
+    var accTd = document.createElement('td');
+    accTd.colSpan = 8;
+    var accDiv = document.createElement('div');
+    accDiv.className = 'acc-content';
+    accDiv.id = 'acc-content-' + safeId;
+    accDiv.dataset.subcatName = sc.name;
+    accDiv.dataset.built = '';
+    accTd.appendChild(accDiv);
+    accTr.appendChild(accTd);
+    tbody.appendChild(accTr);
+  });
+
+  var o = document.getElementById('cat-overview-section');
+  var s = document.getElementById('subcat-section');
+  var i = document.getElementById('items-section');
+  if (o) o.style.display = 'none';
+  if (s) s.style.display = '';
+  if (i) i.style.display = 'none';
+  location.hash = 'category/' + catName;
+}
+
+// ─────────────────────────────────────────────────────────
+// ACCORDION: toggle + lazy-build items table inside a sub-category row
+// ─────────────────────────────────────────────────────────
+function toggleSubcatAccordion(safeId) {
+  var row     = document.getElementById('acc-row-' + safeId);
+  var btn     = document.getElementById('acc-btn-' + safeId);
+  var content = document.getElementById('acc-content-' + safeId);
+  if (!row) return;
+
+  var isOpen = row.style.display !== 'none';
+  if (isOpen) {
+    row.style.display = 'none';
+    if (btn) { btn.innerHTML = '►'; btn.classList.remove('open'); }
+  } else {
+    row.style.display = '';
+    if (btn) { btn.innerHTML = '▼'; btn.classList.add('open'); }
+    if (content && !content.dataset.built) {
+      content.dataset.built = '1';
+      buildAccordionItems(content, catState.selectedCat, content.dataset.subcatName, 'rank', 'asc');
+    }
+  }
+}
+
+function buildAccordionItems(container, catName, subcatName, sortCol, sortDir) {
+  var allItems = pipelineData.filter(function(i){
+    return i.CATEG_COD === catName && i.SUBCAT_COD === subcatName;
+  });
+
+  // Pre-compute percentiles (avoids calling computePercentile inside sort comparator)
+  var withPct = allItems.map(function(item) {
+    return { item: item, pct: computePercentile(item, pipelineData, normalityMap).pct };
+  });
+
+  withPct.sort(function(a, b) {
+    var d = sortDir === 'asc' ? 1 : -1;
+    var ai = a.item, bi = b.item;
+    switch (sortCol) {
+      case 'rank':      return d * ((parseInt(ai.SUBCAT_RANK)||999) - (parseInt(bi.SUBCAT_RANK)||999));
+      case 'item_no':   return d * String(ai.ITEM_NO||'').localeCompare(String(bi.ITEM_NO||''));
+      case 'item_name': return d * (ai.ITEM_NAME||'').localeCompare(bi.ITEM_NAME||'');
+      case 'qty90':     return d * ((parseFloat(ai.RAW_QTY_90D)||0) - (parseFloat(bi.RAW_QTY_90D)||0));
+      case 'rev90':     return d * ((parseFloat(ai.RAW_AMT_90D)||0) - (parseFloat(bi.RAW_AMT_90D)||0));
+      case 'zscore':    return d * ((parseFloat(ai.Z_SCORE)||0) - (parseFloat(bi.Z_SCORE)||0));
+      case 'pct':       return d * (a.pct - b.pct);
+      default:          return d * ((parseInt(ai.SUBCAT_RANK)||999) - (parseInt(bi.SUBCAT_RANK)||999));
+    }
+  });
+
+  function sIcon(col) {
+    if (sortCol !== col) return '<span class="sort-icon">↕</span>';
+    return '<span class="sort-icon">' + (sortDir === 'asc' ? '▲' : '▼') + '</span>';
+  }
+  function thCls(col) { return 'sort-th' + (sortCol === col ? ' sort-active' : ''); }
+
+  var rows = withPct.map(function(entry) {
+    var item   = entry.item;
+    var pctVal = entry.pct;
+    var topPct = Math.round((100 - pctVal) * 10) / 10;
+    var pctCls = pctVal >= 75 ? 'pct-green' : pctVal >= 25 ? 'pct-yellow' : 'pct-red';
+    var qty90  = parseFloat(item.RAW_QTY_90D) || 0;
+    var amt90  = parseFloat(item.RAW_AMT_90D) || 0;
+    var status = (item.STATUS || '').trim();
+    var stsCls = status === 'ACTIVE' ? 'sts-active' : status === 'OUT OF STOCK' ? 'sts-oos' : 'sts-ns';
+    var zVal   = !isNaN(parseFloat(item.Z_SCORE)) ? parseFloat(item.Z_SCORE).toFixed(2) : '—';
+    var iNo    = item.ITEM_NO || '';
+    var iName  = item.ITEM_NAME || '—';
+    return '<tr>' +
+      '<td class="num">' + (item.SUBCAT_RANK || '—') + '</td>' +
+      '<td><a href="#" class="item-link" data-item="' + iNo + '" onclick="zoomToItem(this.dataset.item);return false;">' + iNo + '</a></td>' +
+      '<td><a href="#" class="item-link" data-item="' + iNo + '" onclick="zoomToItem(this.dataset.item);return false;">' + iName + '</a></td>' +
+      '<td class="num">' + Math.round(qty90).toLocaleString() + '</td>' +
+      '<td class="num">' + fmtAmt(amt90) + '</td>' +
+      '<td class="num">' + zVal + '</td>' +
+      '<td class="num"><span class="pct-badge ' + pctCls + '">Top ' + topPct + '%</span></td>' +
+      '<td><span class="' + stsCls + '">' + (status || '—') + '</span></td>' +
+    '</tr>';
+  }).join('');
+
+  container.innerHTML =
+    '<table class="items-inner-table">' +
+    '<thead><tr>' +
+      '<th class="num '  + thCls('rank')      + '" data-col="rank">Rank '      + sIcon('rank')      + '</th>' +
+      '<th class="'      + thCls('item_no')   + '" data-col="item_no">Item # '  + sIcon('item_no')   + '</th>' +
+      '<th class="'      + thCls('item_name') + '" data-col="item_name">Item Name ' + sIcon('item_name') + '</th>' +
+      '<th class="num '  + thCls('qty90')     + '" data-col="qty90">90D Qty '  + sIcon('qty90')     + '</th>' +
+      '<th class="num '  + thCls('rev90')     + '" data-col="rev90">90D Rev '  + sIcon('rev90')     + '</th>' +
+      '<th class="num '  + thCls('zscore')    + '" data-col="zscore">Z-Score ' + sIcon('zscore')    + '</th>' +
+      '<th class="num '  + thCls('pct')       + '" data-col="pct">Percentile ' + sIcon('pct')       + '</th>' +
+      '<th>Status</th>' +
+    '</tr></thead>' +
+    '<tbody>' + rows + '</tbody>' +
+    '</table>';
+
+  // Wire up sort click handlers after DOM insertion
+  container.querySelectorAll('th.sort-th').forEach(function(th) {
+    th.onclick = function() {
+      var col = th.dataset.col;
+      var newDir;
+      if (sortCol === col) {
+        newDir = sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        newDir = (col === 'rank' || col === 'item_no' || col === 'item_name') ? 'asc' : 'desc';
+      }
+      container.dataset.built = '1';
+      buildAccordionItems(container, catName, subcatName, col, newDir);
+    };
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// CATEGORY NAV: back to sub-category table
+// ─────────────────────────────────────────────────────────
+function showSubcatDetail() {
+  catState.selectedSubcat = null;
+  showCategoryDetail(catState.selectedCat);
+}
+
+// showSubcatItems: navigate to sub-category table view and open the named accordion
+function showSubcatItems(subcatName) {
+  if (!pipelineData.length) return;
+  // If subcat detail isn't visible, render it first
+  var subcatSection = document.getElementById('subcat-section');
+  if (!subcatSection || subcatSection.style.display === 'none') {
+    showCategoryDetail(catState.selectedCat);
+  }
+  catState.selectedSubcat = subcatName;
+  var safeId = subcatName.replace(/[^a-zA-Z0-9]/g, '_');
+  var row = document.getElementById('acc-row-' + safeId);
+  if (row && row.style.display === 'none') {
+    toggleSubcatAccordion(safeId);
+  }
+  location.hash = 'category/' + catState.selectedCat + '/' + subcatName;
+}
+
+// ─────────────────────────────────────────────────────────
+// CROSS-VIEW: jump to item zoom
+// ─────────────────────────────────────────────────────────
+function zoomToItem(itemNo) {
+  switchTab('item');
+  document.getElementById('item-search').value = itemNo;
+  doSearch();
+  window.scrollTo(0, 0);
+}
+
+// ═══════════════════════════════════════════════════════════
+// HASH ROUTING
+// ═══════════════════════════════════════════════════════════
+function handleHash() {
+  var hash  = (location.hash || '').replace('#', '').trim();
+  if (!hash) hash = 'item/4000';
+  var parts = hash.split('/');
+  var tab   = parts[0] || 'item';
+
+  if (tab === 'category') {
+    switchTab('category');
+    if (parts[1] && pipelineData.length) {
+      showCategoryDetail(parts[1]);
+      if (parts[2]) showSubcatItems(parts[2]);
+    }
+  } else if (tab === 'store') {
+    switchTab('store');
+  } else {
+    // item tab (default)
+    switchTab('item');
+    if (parts[1] && pipelineData.length) {
+      document.getElementById('item-search').value = parts[1];
+      doSearch();
+    }
+  }
+}
+
+</script>
+
+</body>
+</html> + (v / 1000000).toFixed(2) + 'M';
+  return '
+
+// ─────────────────────────────────────────────────────────
+// SCREEN MANAGEMENT
+// ─────────────────────────────────────────────────────────
+function showScreen(id) {
+  ['loading-screen','picker-screen','welcome-screen','error-screen'].forEach(function(s) {
+    var el = document.getElementById(s);
+    if (el) el.style.display = 'none';
+  });
+  document.getElementById('item-screen').style.display = 'none';
+  var target = document.getElementById(id);
+  if (target) target.style.display = (id === 'item-screen') ? 'block' : 'flex';
+}
+
+// ─────────────────────────────────────────────────────────
+// NAV STATS
+// ─────────────────────────────────────────────────────────
+function updateNavStat() {
+  var count = pipelineData.length;
+  var subcats = new Set(pipelineData.map(function(i){ return i.CATEG_COD + '|' + i.SUBCAT_COD; })).size;
+  var normCount = Object.keys(normalityMap).length;
+  var ts = DataLoader.getLastLoaded();
+  var timeStr = ts ? ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  document.getElementById('nav-stat').textContent =
+    count.toLocaleString() + ' items · ' + subcats + ' sub-cats' + (timeStr ? ' · ' + timeStr : '');
+  document.getElementById('welcome-stats').textContent =
+    count.toLocaleString() + ' items · ' + subcats + ' sub-categories · ' + normCount + ' normality records loaded';
+  document.getElementById('refresh-btn').disabled = false;
+  var footer = DataLoader.getLastLoaded();
+  if (footer) {
+    document.getElementById('dash-footer').textContent =
+      'CK Analytics v1.0 POC · Data loaded ' + footer.toLocaleDateString() + ' ' +
+      footer.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// INIT & REFRESH
+// ─────────────────────────────────────────────────────────
+async function init() {
+  showScreen('loading-screen');
+  try {
+    var result = await DataLoader.loadAll();
+    pipelineData = result.pipeline;
+    normalityMap = result.normality;
+    try {
+      updateNavStat();
+      showScreen('welcome-screen');
+      document.getElementById('item-search').focus();
+      // Read hash to determine initial view; default to item 4000
+      var hash  = (location.hash || '').replace('#', '').trim();
+      var parts = hash.split('/');
+      var initTab = parts[0] || 'item';
+      if (initTab === 'category') {
+        switchTab('category');
+        if (parts[1]) { showCategoryDetail(parts[1]); if (parts[2]) showSubcatItems(parts[2]); }
+      } else if (initTab === 'store') {
+        switchTab('store');
+      } else {
+        var initItem = parts[1] || '4000';
+        doSearch(initItem);
+      }
+    } catch(uiErr) {
+      console.error('[CK] UI transition error after data load:', uiErr);
+    }
+  } catch(e) {
+    console.error('[CK] Data load failed, showing file picker:', e);
+    fileMode = true;
+    showScreen('picker-screen');
+  }
+}
+
+async function refreshData() {
+  if (fileMode) { showScreen('picker-screen'); return; }
+  var btn = document.getElementById('refresh-btn');
+  btn.textContent = '↻ Refreshing…';
+  btn.disabled = true;
+  try {
+    var result = await DataLoader.refresh();
+    pipelineData = result.pipeline;
+    normalityMap = result.normality;
+    updateNavStat();
+    btn.textContent = '↻ Refresh';
+  } catch(e) {
+    btn.textContent = '↻ Refresh';
+    btn.disabled = false;
+    alert('Could not refresh data.');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// FILE PICKER (file:// fallback)
+// ─────────────────────────────────────────────────────────
+function loadFromFiles() {
+  var pInput = document.getElementById('fp-pipeline');
+  var nInput = document.getElementById('fp-normality');
+  if (!pInput.files || !pInput.files[0]) { alert('Please select the Pipeline Data CSV file.'); return; }
+  if (!nInput.files || !nInput.files[0]) { alert('Please select the Normality Results CSV file.'); return; }
+
+  showScreen('loading-screen');
+  document.getElementById('load-msg').textContent = 'Reading files…';
+
+  var results = {};
+  function tryProcess() {
+    if (results.pipeline !== undefined && results.normality !== undefined) {
+      processFromText(results.pipeline, results.normality);
+    }
+  }
+
+  var r1 = new FileReader();
+  r1.onload = function(e) { results.pipeline = e.target.result; tryProcess(); };
+  r1.onerror = function() { alert('Could not read pipeline CSV.'); };
+  r1.readAsText(pInput.files[0]);
+
+  var r2 = new FileReader();
+  r2.onload = function(e) { results.normality = e.target.result; tryProcess(); };
+  r2.onerror = function() { alert('Could not read normality CSV.'); };
+  r2.readAsText(nInput.files[0]);
+}
+
+function processFromText(pText, nText) {
+  document.getElementById('load-msg').textContent = 'Parsing data…';
+  setTimeout(function() {
+    try {
+      pipelineData = Papa.parse(pText, {
+        header: true, skipEmptyLines: true,
+        transformHeader: function(h){ return h.trim().replace(/^\uFEFF/, ''); }
+      }).data;
+
+      var rows = Papa.parse(nText, {
+        header: true, skipEmptyLines: true,
+        transformHeader: function(h){ return h.trim().replace(/^\uFEFF/, ''); }
+      }).data;
+      normalityMap = {};
+      rows.forEach(function(r){ normalityMap[r.CATEG_COD + '|' + r.SUBCAT_COD] = r; });
+
+      DataLoader._state.pipelineData = pipelineData;
+      DataLoader._state.normalityMap = normalityMap;
+      DataLoader._state.lastLoaded = new Date();
+
+      updateNavStat();
+      showScreen('welcome-screen');
+      document.getElementById('item-search').focus();
+      doSearch('4000');
+    } catch(err) {
+      console.error('[CK] processFromText error:', err);
+      var msg = document.getElementById('load-msg');
+      msg.textContent = '\u274C Error: ' + err.message;
+      msg.style.color = '#dc2626';
+    }
+  }, 20);
+}
+
+// ─────────────────────────────────────────────────────────
+// SEARCH
+// ─────────────────────────────────────────────────────────
+function doSearch(itemNo) {
+  var q = (itemNo ? String(itemNo) : document.getElementById('item-search').value).trim().toUpperCase();
+  if (itemNo) document.getElementById('item-search').value = q;
+  if (!q) return;
+  if (!pipelineData.length) { alert('Data is still loading — please wait.'); return; }
+  var item = pipelineData.find(function(i){ return (i.ITEM_NO || '').trim().toUpperCase() === q; });
+  if (!item) {
+    document.getElementById('error-msg').textContent =
+      'No item found for "' + q + '". Check the number and try again.';
+    showScreen('error-screen');
+    return;
+  }
+  renderItem(item);
+}
+
+function clearView() {
+  document.getElementById('item-search').value = '';
+  Object.values(activeCharts).forEach(function(c){ c.destroy(); });
+  activeCharts = {};
+  if (pipelineData.length) showScreen('welcome-screen');
+}
+
+// ─────────────────────────────────────────────────────────
+// RENDER ITEM
+// ─────────────────────────────────────────────────────────
+function renderItem(item) {
+  var qty90     = parseFloat(item.RAW_QTY_90D)      || 0;
+  var amt90     = parseFloat(item.RAW_AMT_90D)      || 0;
+  var qty12m    = parseFloat(item.RAW_QTY_12M_TOTAL) || 0;
+  var amt12m    = parseFloat(item.RAW_AMT_12M_TOTAL) || 0;
+  var pctRecent = parseFloat(item.PCT_RECENT)        || 0;
+  var txnCount  = parseInt(item.TXN_COUNT)           || 0;
+  var rankNum   = parseInt(item.SUBCAT_RANK)         || 0;
+  var rankTotal = parseInt(item.SUBCAT_TOTAL)  || parseInt(item.PEER_COUNT) || 0;
+
+  // Percentile
+  var pResult    = computePercentile(item, pipelineData, normalityMap);
+  var pctR       = pResult.pct;
+  var method     = pResult.method;
+  var topPct     = Math.round((100 - pctR) * 10) / 10;
+  var topPctHdr  = rankTotal > 0 ? Math.round((1 - (rankNum - 1) / rankTotal) * 100) : 0;
+
+  // ── Header ──
+  document.getElementById('h-name').textContent   = item.ITEM_NAME || item.ITEM_NO;
+  document.getElementById('h-itemno').textContent = '# ' + item.ITEM_NO;
+  document.getElementById('h-rank').textContent   = 'Rank ' + rankNum + ' of ' + rankTotal + '  (top ' + topPctHdr + '%)';
+  document.getElementById('h-categ').textContent  = item.CATEG_COD;
+  document.getElementById('h-subcat').textContent = item.SUBCAT_COD;
+  document.getElementById('h-method').textContent = item.RANK_METHOD || '—';
+  document.getElementById('h-peers').textContent  = item.PEER_COUNT  || '—';
+
+  // ── KPI: 90-day ──
+  document.getElementById('k-qty90').textContent = fmtQty(qty90);
+  document.getElementById('k-amt90').textContent = fmtAmt(amt90);
+  document.getElementById('k-txn').textContent   = txnCount.toLocaleString() + ' transactions';
+
+  // ── KPI: 30-day (est) ──
+  document.getElementById('k-qty30').textContent = fmtQty(qty90 / 3);
+  document.getElementById('k-amt30').textContent = fmtAmt(amt90 / 3);
+
+  // ── KPI: 7-day (est) ──
+  document.getElementById('k-qty7').textContent  = fmtQty(qty90 / (90 / 7));
+  document.getElementById('k-amt7').textContent  = fmtAmt(amt90 / (90 / 7));
+
+  // ── KPI: Velocity ──
+  var velCls = 'vel-ss', velLbl = 'Steady';
+  if (pctRecent > 30)      { velCls = 'vel-up';   velLbl = 'Trending Up ↑'; }
+  else if (pctRecent < 20) { velCls = 'vel-down'; velLbl = 'Trending Down ↓'; }
+  document.getElementById('k-vel').innerHTML  = '<span class="' + velCls + '">' + velLbl + '</span>';
+  document.getElementById('k-pct').textContent = pctRecent.toFixed(1) + '% of 12M sales in last 90D';
+
+  // ── KPI: Status ──
+  var status = (item.STATUS || '').trim();
+  var stsCls = status === 'ACTIVE' ? 'sts-active' : status === 'OUT OF STOCK' ? 'sts-oos' : 'sts-ns';
+  document.getElementById('k-status').innerHTML    = '<span class="' + stsCls + '">' + (status || '—') + '</span>';
+  document.getElementById('k-stock').textContent   = fmtQty(item.QTY_AVAIL_ALL_STORES) + ' units available';
+  document.getElementById('k-stock-note').textContent = (item.STORES_WITH_STOCK || 0) + ' stores with stock';
+
+  // ── Rank Strip ──
+  document.getElementById('rank-main').innerHTML =
+    'Sub-category rank: <strong>' + rankNum + '</strong> of <strong>' + rankTotal + '</strong>' +
+    ' — <span class="rank-pct">Top ' + topPct + '%</span> of ' + item.SUBCAT_COD + ' items';
+  document.getElementById('rank-method').textContent = 'Percentile method: ' + method;
+  document.getElementById('rank-bar').style.width    = Math.min(100, pctR) + '%';
+  document.getElementById('rank-bar-lbl').textContent = 'Top ' + topPct + '%';
+
+  // ── Inventory Table ──
+  var invBody = document.getElementById('inv-body');
+  invBody.innerHTML = '';
+  var aggRow = invBody.insertRow();
+  aggRow.className = 'agg-row';
+  var aggCols = [
+    { v: 'All Stores', cls: '' },
+    { v: fmtQty(item.QTY_ON_HND_ALL_STORES), cls: 'num' },
+    { v: fmtQty(item.QTY_AVAIL_ALL_STORES),  cls: 'num' },
+    { v: item.STORES_WITH_STOCK || '—', cls: 'num' },
+    { v: fmtQty(qty12m), cls: 'num' },
+    { v: fmtAmt(amt12m), cls: 'num' },
+    { v: '<span class="' + stsCls + '">' + (status || '—') + '</span>', cls: '', html: true }
+  ];
+  aggCols.forEach(function(col) {
+    var td = aggRow.insertCell();
+    if (col.cls) td.className = col.cls;
+    if (col.html) td.innerHTML = col.v; else td.textContent = col.v;
+  });
+  var noteRow = invBody.insertRow();
+  noteRow.className = 'note-row';
+  var ntd = noteRow.insertCell();
+  ntd.colSpan = 7;
+  ntd.textContent = 'Per-store detail requires IM_INV join — not yet available in this POC.';
+
+  // ── Show & Charts ──
+  document.getElementById('item-screen').dataset.loaded = 'true';
+  showScreen('item-screen');
+  Object.values(activeCharts).forEach(function(c){ c.destroy(); });
+  activeCharts = {};
+  renderCharts(item, qty90, amt90);
+}
+
+// ─────────────────────────────────────────────────────────
+// CHARTS
+// ─────────────────────────────────────────────────────────
+var baseOpts = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      mode: 'index', intersect: false,
+      bodyFont:  { family: 'Inter, system-ui, sans-serif', size: 11 },
+      titleFont: { family: 'Inter, system-ui, sans-serif', size: 11 }
+    }
+  }
+};
+
+function syntheticTrend(totalQty, days) {
+  var dailyAvg = totalQty / days;
+  var labels = [], data = [], now = new Date();
+  for (var d = days - 1; d >= 0; d--) {
+    var date = new Date(now);
+    date.setDate(date.getDate() - d);
+    labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    var dow = date.getDay();
+    var wk  = (dow === 0 || dow === 6) ? 1.25 : 0.92;
+    data.push(Math.max(0, Math.round(dailyAvg * wk * (0.65 + Math.random() * 0.7))));
+  }
+  return { labels: labels, data: data };
+}
+
+function renderCharts(item, qty90, amt90) {
+  var qty12m  = parseFloat(item.RAW_QTY_12M_TOTAL) || 0;
+  var stksW   = parseInt(item.STORES_WITH_STOCK)   || 0;
+  var maxSt   = Math.max(
+    pipelineData.reduce(function(m,i){ return Math.max(m, parseInt(i.STORE_COUNT)||0); }, 0),
+    stksW
+  );
+  var stksOut  = Math.max(0, maxSt - stksW);
+  var expected = qty12m / 4;
+
+  // 1. Trend line
+  var trend = syntheticTrend(qty90, 90);
+  activeCharts.trend = new Chart(
+    document.getElementById('chart-trend').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: trend.labels,
+      datasets: [{ data: trend.data,
+        borderColor: '#3d5a80', backgroundColor: 'rgba(61,90,128,0.07)',
+        borderWidth: 1.5, fill: true, tension: 0.35, pointRadius: 0, pointHoverRadius: 3
+      }]
+    },
+    options: Object.assign({}, baseOpts, {
+      scales: {
+        x: { ticks: { font: { size: 9 }, maxTicksLimit: 13, maxRotation: 0 }, grid: { color: 'rgba(0,0,0,0.04)' } },
+        y: { ticks: { font: { size: 9 }, maxTicksLimit: 5 }, grid: { color: 'rgba(0,0,0,0.04)' }, beginAtZero: true }
+      }
+    })
+  });
+
+  // 2. Doughnut
+  activeCharts.pie = new Chart(
+    document.getElementById('chart-stores').getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: ['With Stock (' + stksW + ')', 'Without (' + stksOut + ')'],
+      datasets: [{ data: [stksW, stksOut],
+        backgroundColor: ['#3d5a80', '#d1d5db'], borderColor: ['#fff','#fff'], borderWidth: 2
+      }]
+    },
+    options: Object.assign({}, baseOpts, {
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { font: { size: 9 }, boxWidth: 12, padding: 6 } },
+        tooltip: { callbacks: { label: function(ctx){ return ' ' + ctx.label; } } }
+      },
+      cutout: '50%'
+    })
+  });
+
+  // 3. Actual vs Expected
+  var velColor  = qty90 >= expected ? '#3d5a80' : '#dc2626';
+  var velBorder = qty90 >= expected ? '#2d4a6e' : '#991b1b';
+  activeCharts.compare = new Chart(
+    document.getElementById('chart-compare').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: ['Actual 90D', 'Expected (12M÷4)'],
+      datasets: [{ data: [qty90, Math.round(expected)],
+        backgroundColor: [velColor, '#d1d5db'], borderColor: [velBorder, '#9ca3af'], borderWidth: 1
+      }]
+    },
+    options: Object.assign({}, baseOpts, {
+      scales: {
+        x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { font: { size: 9 }, maxTicksLimit: 5 }, grid: { color: 'rgba(0,0,0,0.04)' }, beginAtZero: true }
+      },
+      plugins: Object.assign({}, baseOpts.plugins, {
+        tooltip: { callbacks: { label: function(ctx){ return ' ' + fmtQty(ctx.parsed.y) + ' units'; } } }
+      })
+    })
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('item-search').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doSearch();
+  });
+  init(); // hash routing handled inside init() after data loads
+  window.addEventListener('hashchange', handleHash);
+});
+
+
+// ═══════════════════════════════════════════════════════════
+// TAB NAVIGATION
+// ═══════════════════════════════════════════════════════════
+var currentTab = 'item';
+var catSortBy  = 'revenue';
+var catState        = { selectedCat: null, selectedSubcat: null };
+var subcatSortState = { col: 'revenue', dir: 'desc' };
+
+function switchTab(tab) {
+  currentTab = tab;
+
+  // Update tab button styles
+  ['item','category','store'].forEach(function(t) {
+    var btn = document.getElementById('tab-' + t);
+    if (btn) btn.classList.toggle('active', t === tab);
+  });
+
+  // Hide non-item views
+  var catEl   = document.getElementById('category-view');
+  var storeEl = document.getElementById('store-view');
+  if (catEl)   catEl.style.display   = 'none';
+  if (storeEl) storeEl.style.display = 'none';
+
+  if (tab === 'item') {
+    // Restore appropriate item-tab screen
+    if (pipelineData.length) {
+      var loaded = document.getElementById('item-screen').dataset.loaded === 'true';
+      showScreen(loaded ? 'item-screen' : 'welcome-screen');
+    }
+    // If still loading, loading/picker screen is already visible — leave it
+    location.hash = 'item';
+  } else {
+    // Hide all item-tab screens
+    ['loading-screen','picker-screen','welcome-screen','error-screen','item-screen'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+
+    if (tab === 'category') {
+      if (catEl) catEl.style.display = 'block';
+      if (pipelineData.length) renderCategorySummary();
+      // Route to sub-section if catState is set
+      if (catState.selectedSubcat) showSubcatItems(catState.selectedSubcat);
+      else if (catState.selectedCat) showCategoryDetail(catState.selectedCat);
+      else showCatOverview();
+      location.hash = 'category';
+    } else if (tab === 'store') {
+      if (storeEl) storeEl.style.display = 'block';
+      location.hash = 'store';
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// CATEGORY AGGREGATION
+// ═══════════════════════════════════════════════════════════
+function buildCategoryMap() {
+  var cats = {};
+  pipelineData.forEach(function(item) {
+    var cat = item.CATEG_COD;
+    if (!cat) return;
+    if (!cats[cat]) cats[cat] = { name: cat, items: [], subcats: {} };
+    cats[cat].items.push(item);
+    var sc = item.SUBCAT_COD;
+    if (sc) {
+      if (!cats[cat].subcats[sc]) cats[cat].subcats[sc] = [];
+      cats[cat].subcats[sc].push(item);
+    }
+  });
+  return cats;
+}
+
+function renderCategorySummary() {
+  var totalSubcats = new Set(pipelineData.map(function(i){ return i.CATEG_COD + '|' + i.SUBCAT_COD; })).size;
+  var cats = buildCategoryMap();
+  var catCount = Object.keys(cats).length;
+  var totalActive = pipelineData.filter(function(i){ return i.STATUS === 'ACTIVE'; }).length;
+  var totalRev = pipelineData.reduce(function(s,i){ return s + (parseFloat(i.RAW_AMT_90D)||0); }, 0);
+  var notSelling = pipelineData.filter(function(i){ return i.STATUS === 'NOT SELLING'; }).length;
+
+  function setTxt(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+  setTxt('cat-stat-cats',       catCount.toLocaleString());
+  setTxt('cat-stat-subcats',    totalSubcats.toLocaleString());
+  setTxt('cat-stat-active',     totalActive.toLocaleString());
+  setTxt('cat-stat-revenue',    '$' + (totalRev / 1000).toFixed(1) + 'K');
+  setTxt('cat-stat-notselling', notSelling.toLocaleString());
+}
+
+function renderCategoryOverview() {
+  if (!pipelineData.length) return;
+  renderCategorySummary();
+  var cats = buildCategoryMap();
+
+  // Pre-compute per-category aggregates
+  var catList = Object.values(cats).map(function(cat) {
+    var rev = cat.items.reduce(function(s,i){ return s+(parseFloat(i.RAW_AMT_90D)||0); },0);
+    var qty = cat.items.reduce(function(s,i){ return s+(parseFloat(i.RAW_QTY_90D)||0); },0);
+    return { cat: cat, rev: rev, qty: qty };
+  });
+  var maxRev = catList.reduce(function(m,c){ return Math.max(m, c.rev); }, 0);
+
+  catList.sort(function(a, b) {
+    if (catSortBy === 'revenue') return b.rev - a.rev;
+    if (catSortBy === 'qty')     return b.qty - a.qty;
+    if (catSortBy === 'items')   return b.cat.items.length - a.cat.items.length;
+    return a.cat.name.localeCompare(b.cat.name);
+  });
+
+  var grid = document.getElementById('cat-cards');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  catList.forEach(function(entry) {
+    var cat      = entry.cat;
+    var totalRev = entry.rev;
+    var totalQty = entry.qty;
+    var avgVel   = cat.items.reduce(function(s,i){ return s+(parseFloat(i.PCT_RECENT)||0); },0) / cat.items.length;
+    var oos      = cat.items.filter(function(i){ return i.STATUS==='OUT OF STOCK'; }).length;
+    var ns       = cat.items.filter(function(i){ return i.STATUS==='NOT SELLING'; }).length;
+    var scCount  = Object.keys(cat.subcats).length;
+    var trendUp  = cat.items.filter(function(i){ return (parseFloat(i.PCT_RECENT)||0) > 30; }).length;
+    var barPct   = maxRev > 0 ? Math.min(100, Math.round((totalRev / maxRev) * 100)) : 0;
+
+    var velArrow, velClass;
+    if (avgVel > 30)      { velArrow = '↑'; velClass = 'vel-up'; }
+    else if (avgVel < 20) { velArrow = '↓'; velClass = 'vel-down'; }
+    else                  { velArrow = '→'; velClass = 'vel-ss'; }
+
+    var oosPill = oos > 0 ? '<span class="status-pill sts-oos">' + oos + ' OOS</span>' : '';
+    var nsPill  = ns  > 0 ? '<span class="status-pill sts-ns">'  + ns  + ' not selling</span>' : '';
+
+    var card = document.createElement('div');
+    card.className = 'cat-card';
+    card.onclick = function(){ showCategoryDetail(cat.name); };
+
+    card.innerHTML =
+      '<div class="cat-card-name-row">' +
+        '<div class="cat-card-name">' + cat.name + '</div>' +
+        '<span class="cat-drill-hint">View →</span>' +
+      '</div>' +
+      '<div class="cat-rev-bar-wrap"><div class="cat-rev-bar-fill" style="width:' + barPct + '%"></div></div>' +
+      '<div class="cat-card-stats">' +
+        '<div class="cat-stat-row"><span class="cat-stat-lbl">Items</span><span class="cat-stat-val">' + cat.items.length.toLocaleString() + '</span></div>' +
+        '<div class="cat-stat-row"><span class="cat-stat-lbl">Sub-categories</span><span class="cat-stat-val">' + scCount + '</span></div>' +
+        '<div class="cat-stat-row"><span class="cat-stat-lbl">90D Qty Sold</span><span class="cat-stat-val">' + Math.round(totalQty).toLocaleString() + '</span></div>' +
+        '<div class="cat-stat-row"><span class="cat-stat-lbl">90D Revenue</span><span class="cat-stat-val cat-rev">' + fmtAmt(totalRev) + '</span></div>' +
+        '<div class="cat-stat-row"><span class="cat-stat-lbl">Avg Velocity</span>' +
+          '<span class="cat-stat-val"><span class="' + velClass + '">' + velArrow + '</span> ' + avgVel.toFixed(1) + '%</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="cat-card-status">' +
+        '<span class="status-pill sts-active">' + trendUp + ' of ' + cat.items.length + ' trending up</span>' +
+        oosPill + nsPill +
+      '</div>';
+
+    grid.appendChild(card);
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// CATEGORY DRILL-DOWN: show sub-categories
+// ─────────────────────────────────────────────────────────
+function showCatOverview() {
+  catState.selectedCat    = null;
+  catState.selectedSubcat = null;
+  renderCategoryOverview();
+  var o = document.getElementById('cat-overview-section');
+  var s = document.getElementById('subcat-section');
+  var i = document.getElementById('items-section');
+  if (o) o.style.display = '';
+  if (s) s.style.display = 'none';
+  if (i) i.style.display = 'none';
+  location.hash = 'category';
+}
+
+// Rebuild sortable subcat table header based on current sort state
+function buildSubcatThead() {
+  var thead = document.getElementById('subcat-thead');
+  if (!thead) return;
+  var cols = [
+    { key: 'name',    label: 'Sub-Category',  cls: '' },
+    { key: 'items',   label: 'Items',          cls: 'num' },
+    { key: 'qty',     label: '90D Qty',        cls: 'num' },
+    { key: 'revenue', label: '90D Revenue',    cls: 'num' },
+    { key: 'pctcat',  label: '% of Cat Rev',   cls: 'num' },
+    { key: 'avgz',    label: 'Avg Z-Score',    cls: 'num' },
+    { key: 'normal',  label: 'Normality',      cls: '' },
+    { key: '_exp',    label: '',               cls: 'acc-toggle-cell' }
+  ];
+  var tr = document.createElement('tr');
+  cols.forEach(function(col) {
+    var th = document.createElement('th');
+    if (col.cls) th.className = col.cls;
+    if (col.key !== '_exp' && col.key !== 'normal') {
+      var isActive = subcatSortState.col === col.key;
+      th.className += ' sort-th' + (isActive ? ' sort-active' : '');
+      var icon = isActive ? (subcatSortState.dir === 'asc' ? '▲' : '▼') : '↕';
+      th.innerHTML = col.label + '<span class="sort-icon">' + icon + '</span>';
+      th.dataset.col = col.key;
+      th.onclick = (function(k){ return function(){ sortSubcatBy(k); }; })(col.key);
+    } else {
+      th.textContent = col.label;
+    }
+    tr.appendChild(th);
+  });
+  thead.innerHTML = '';
+  thead.appendChild(tr);
+}
+
+function sortSubcatBy(col) {
+  if (subcatSortState.col === col) {
+    subcatSortState.dir = subcatSortState.dir === 'desc' ? 'asc' : 'desc';
+  } else {
+    subcatSortState.col = col;
+    subcatSortState.dir = (col === 'name') ? 'asc' : 'desc';
+  }
+  showCategoryDetail(catState.selectedCat);
+}
+
+function showCategoryDetail(catName) {
+  if (!pipelineData.length) return;
+  catState.selectedCat    = catName;
+  catState.selectedSubcat = null;
+
+  var cats = buildCategoryMap();
+  var cat  = cats[catName];
+  if (!cat) return;
+
+  var catTotalRev = cat.items.reduce(function(s,i){ return s+(parseFloat(i.RAW_AMT_90D)||0); },0);
+
+  var el = document.getElementById('subcat-heading');
+  if (el) el.textContent = catName + ' — Sub-Categories (' + Object.keys(cat.subcats).length + ')';
+
+  buildSubcatThead();
+
+  // Build subcat list with pre-computed aggregates
+  var subcatList = Object.keys(cat.subcats).map(function(sc) {
+    var its = cat.subcats[sc];
+    var rev = its.reduce(function(s,i){ return s+(parseFloat(i.RAW_AMT_90D)||0); },0);
+    var qty = its.reduce(function(s,i){ return s+(parseFloat(i.RAW_QTY_90D)||0); },0);
+    var zIt = its.filter(function(i){ return !isNaN(parseFloat(i.Z_SCORE)); });
+    var avgZ = zIt.length > 0
+      ? zIt.reduce(function(s,i){ return s+parseFloat(i.Z_SCORE); },0) / zIt.length
+      : null;
+    return { name: sc, items: its, rev: rev, qty: qty, avgZ: avgZ };
+  });
+
+  subcatList.sort(function(a, b) {
+    var dir = subcatSortState.dir === 'asc' ? 1 : -1;
+    switch (subcatSortState.col) {
+      case 'name':   return dir * a.name.localeCompare(b.name);
+      case 'items':  return dir * (a.items.length - b.items.length);
+      case 'qty':    return dir * (a.qty - b.qty);
+      case 'pctcat':
+      case 'revenue':return dir * (a.rev - b.rev);
+      case 'avgz':   return dir * ((a.avgZ||0) - (b.avgZ||0));
+      default:       return dir * (a.rev - b.rev);
+    }
+  });
+
+  var tbody = document.getElementById('subcat-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  subcatList.forEach(function(sc, idx) {
+    var isTop3   = idx < 3;
+    var scPctNum = catTotalRev > 0 ? (sc.rev / catTotalRev * 100) : 0;
+    var scPct    = scPctNum.toFixed(1);
+    var barW     = Math.min(100, Math.round(scPctNum));
+    var avgZStr  = sc.avgZ !== null ? sc.avgZ.toFixed(2) : '—';
+    var normKey  = catName + '|' + sc.name;
+    var norm     = normalityMap[normKey];
+    var isNormal = norm && norm.NORMAL === 'Yes';
+    var normBadge = isNormal
+      ? '<span class="norm-badge norm-yes">Normal</span>'
+      : '<span class="norm-badge norm-no">Non-Normal</span>';
+    var safeId   = sc.name.replace(/[^a-zA-Z0-9]/g, '_');
+
+    // Main sub-category row
+    var tr = document.createElement('tr');
+    tr.className = 'subcat-row' + (isTop3 ? ' subcat-top' : '');
+    tr.onclick = (function(sid){ return function(){ toggleSubcatAccordion(sid); }; })(safeId);
+    tr.innerHTML =
+      '<td><strong>' + sc.name + '</strong></td>' +
+      '<td class="num">' + sc.items.length + '</td>' +
+      '<td class="num">' + Math.round(sc.qty).toLocaleString() + '</td>' +
+      '<td class="num">' + fmtAmt(sc.rev) + '</td>' +
+      '<td class="num">' +
+        '<div class="sc-pct-wrap">' +
+          '<span>' + scPct + '%</span>' +
+          '<div class="sc-bar-wrap"><div class="sc-bar-fill" style="width:' + barW + '%"></div></div>' +
+        '</div>' +
+      '</td>' +
+      '<td class="num">' + avgZStr + '</td>' +
+      '<td>' + normBadge + '</td>' +
+      '<td class="acc-toggle-cell"><span class="acc-toggle-btn" id="acc-btn-' + safeId + '">►</span></td>';
+    tbody.appendChild(tr);
+
+    // Accordion expansion row (lazy-built on first open)
+    var accTr = document.createElement('tr');
+    accTr.className = 'acc-expand-row';
+    accTr.id = 'acc-row-' + safeId;
+    accTr.style.display = 'none';
+    var accTd = document.createElement('td');
+    accTd.colSpan = 8;
+    var accDiv = document.createElement('div');
+    accDiv.className = 'acc-content';
+    accDiv.id = 'acc-content-' + safeId;
+    accDiv.dataset.subcatName = sc.name;
+    accDiv.dataset.built = '';
+    accTd.appendChild(accDiv);
+    accTr.appendChild(accTd);
+    tbody.appendChild(accTr);
+  });
+
+  var o = document.getElementById('cat-overview-section');
+  var s = document.getElementById('subcat-section');
+  var i = document.getElementById('items-section');
+  if (o) o.style.display = 'none';
+  if (s) s.style.display = '';
+  if (i) i.style.display = 'none';
+  location.hash = 'category/' + catName;
+}
+
+// ─────────────────────────────────────────────────────────
+// ACCORDION: toggle + lazy-build items table inside a sub-category row
+// ─────────────────────────────────────────────────────────
+function toggleSubcatAccordion(safeId) {
+  var row     = document.getElementById('acc-row-' + safeId);
+  var btn     = document.getElementById('acc-btn-' + safeId);
+  var content = document.getElementById('acc-content-' + safeId);
+  if (!row) return;
+
+  var isOpen = row.style.display !== 'none';
+  if (isOpen) {
+    row.style.display = 'none';
+    if (btn) { btn.innerHTML = '►'; btn.classList.remove('open'); }
+  } else {
+    row.style.display = '';
+    if (btn) { btn.innerHTML = '▼'; btn.classList.add('open'); }
+    if (content && !content.dataset.built) {
+      content.dataset.built = '1';
+      buildAccordionItems(content, catState.selectedCat, content.dataset.subcatName, 'rank', 'asc');
+    }
+  }
+}
+
+function buildAccordionItems(container, catName, subcatName, sortCol, sortDir) {
+  var allItems = pipelineData.filter(function(i){
+    return i.CATEG_COD === catName && i.SUBCAT_COD === subcatName;
+  });
+
+  // Pre-compute percentiles (avoids calling computePercentile inside sort comparator)
+  var withPct = allItems.map(function(item) {
+    return { item: item, pct: computePercentile(item, pipelineData, normalityMap).pct };
+  });
+
+  withPct.sort(function(a, b) {
+    var d = sortDir === 'asc' ? 1 : -1;
+    var ai = a.item, bi = b.item;
+    switch (sortCol) {
+      case 'rank':      return d * ((parseInt(ai.SUBCAT_RANK)||999) - (parseInt(bi.SUBCAT_RANK)||999));
+      case 'item_no':   return d * String(ai.ITEM_NO||'').localeCompare(String(bi.ITEM_NO||''));
+      case 'item_name': return d * (ai.ITEM_NAME||'').localeCompare(bi.ITEM_NAME||'');
+      case 'qty90':     return d * ((parseFloat(ai.RAW_QTY_90D)||0) - (parseFloat(bi.RAW_QTY_90D)||0));
+      case 'rev90':     return d * ((parseFloat(ai.RAW_AMT_90D)||0) - (parseFloat(bi.RAW_AMT_90D)||0));
+      case 'zscore':    return d * ((parseFloat(ai.Z_SCORE)||0) - (parseFloat(bi.Z_SCORE)||0));
+      case 'pct':       return d * (a.pct - b.pct);
+      default:          return d * ((parseInt(ai.SUBCAT_RANK)||999) - (parseInt(bi.SUBCAT_RANK)||999));
+    }
+  });
+
+  function sIcon(col) {
+    if (sortCol !== col) return '<span class="sort-icon">↕</span>';
+    return '<span class="sort-icon">' + (sortDir === 'asc' ? '▲' : '▼') + '</span>';
+  }
+  function thCls(col) { return 'sort-th' + (sortCol === col ? ' sort-active' : ''); }
+
+  var rows = withPct.map(function(entry) {
+    var item   = entry.item;
+    var pctVal = entry.pct;
+    var topPct = Math.round((100 - pctVal) * 10) / 10;
+    var pctCls = pctVal >= 75 ? 'pct-green' : pctVal >= 25 ? 'pct-yellow' : 'pct-red';
+    var qty90  = parseFloat(item.RAW_QTY_90D) || 0;
+    var amt90  = parseFloat(item.RAW_AMT_90D) || 0;
+    var status = (item.STATUS || '').trim();
+    var stsCls = status === 'ACTIVE' ? 'sts-active' : status === 'OUT OF STOCK' ? 'sts-oos' : 'sts-ns';
+    var zVal   = !isNaN(parseFloat(item.Z_SCORE)) ? parseFloat(item.Z_SCORE).toFixed(2) : '—';
+    var iNo    = item.ITEM_NO || '';
+    var iName  = item.ITEM_NAME || '—';
+    return '<tr>' +
+      '<td class="num">' + (item.SUBCAT_RANK || '—') + '</td>' +
+      '<td><a href="#" class="item-link" data-item="' + iNo + '" onclick="zoomToItem(this.dataset.item);return false;">' + iNo + '</a></td>' +
+      '<td><a href="#" class="item-link" data-item="' + iNo + '" onclick="zoomToItem(this.dataset.item);return false;">' + iName + '</a></td>' +
+      '<td class="num">' + Math.round(qty90).toLocaleString() + '</td>' +
+      '<td class="num">' + fmtAmt(amt90) + '</td>' +
+      '<td class="num">' + zVal + '</td>' +
+      '<td class="num"><span class="pct-badge ' + pctCls + '">Top ' + topPct + '%</span></td>' +
+      '<td><span class="' + stsCls + '">' + (status || '—') + '</span></td>' +
+    '</tr>';
+  }).join('');
+
+  container.innerHTML =
+    '<table class="items-inner-table">' +
+    '<thead><tr>' +
+      '<th class="num '  + thCls('rank')      + '" data-col="rank">Rank '      + sIcon('rank')      + '</th>' +
+      '<th class="'      + thCls('item_no')   + '" data-col="item_no">Item # '  + sIcon('item_no')   + '</th>' +
+      '<th class="'      + thCls('item_name') + '" data-col="item_name">Item Name ' + sIcon('item_name') + '</th>' +
+      '<th class="num '  + thCls('qty90')     + '" data-col="qty90">90D Qty '  + sIcon('qty90')     + '</th>' +
+      '<th class="num '  + thCls('rev90')     + '" data-col="rev90">90D Rev '  + sIcon('rev90')     + '</th>' +
+      '<th class="num '  + thCls('zscore')    + '" data-col="zscore">Z-Score ' + sIcon('zscore')    + '</th>' +
+      '<th class="num '  + thCls('pct')       + '" data-col="pct">Percentile ' + sIcon('pct')       + '</th>' +
+      '<th>Status</th>' +
+    '</tr></thead>' +
+    '<tbody>' + rows + '</tbody>' +
+    '</table>';
+
+  // Wire up sort click handlers after DOM insertion
+  container.querySelectorAll('th.sort-th').forEach(function(th) {
+    th.onclick = function() {
+      var col = th.dataset.col;
+      var newDir;
+      if (sortCol === col) {
+        newDir = sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        newDir = (col === 'rank' || col === 'item_no' || col === 'item_name') ? 'asc' : 'desc';
+      }
+      container.dataset.built = '1';
+      buildAccordionItems(container, catName, subcatName, col, newDir);
+    };
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// CATEGORY NAV: back to sub-category table
+// ─────────────────────────────────────────────────────────
+function showSubcatDetail() {
+  catState.selectedSubcat = null;
+  showCategoryDetail(catState.selectedCat);
+}
+
+// showSubcatItems: navigate to sub-category table view and open the named accordion
+function showSubcatItems(subcatName) {
+  if (!pipelineData.length) return;
+  // If subcat detail isn't visible, render it first
+  var subcatSection = document.getElementById('subcat-section');
+  if (!subcatSection || subcatSection.style.display === 'none') {
+    showCategoryDetail(catState.selectedCat);
+  }
+  catState.selectedSubcat = subcatName;
+  var safeId = subcatName.replace(/[^a-zA-Z0-9]/g, '_');
+  var row = document.getElementById('acc-row-' + safeId);
+  if (row && row.style.display === 'none') {
+    toggleSubcatAccordion(safeId);
+  }
+  location.hash = 'category/' + catState.selectedCat + '/' + subcatName;
+}
+
+// ─────────────────────────────────────────────────────────
+// CROSS-VIEW: jump to item zoom
+// ─────────────────────────────────────────────────────────
+function zoomToItem(itemNo) {
+  switchTab('item');
+  document.getElementById('item-search').value = itemNo;
+  doSearch();
+  window.scrollTo(0, 0);
+}
+
+// ═══════════════════════════════════════════════════════════
+// HASH ROUTING
+// ═══════════════════════════════════════════════════════════
+function handleHash() {
+  var hash  = (location.hash || '').replace('#', '').trim();
+  if (!hash) hash = 'item/4000';
+  var parts = hash.split('/');
+  var tab   = parts[0] || 'item';
+
+  if (tab === 'category') {
+    switchTab('category');
+    if (parts[1] && pipelineData.length) {
+      showCategoryDetail(parts[1]);
+      if (parts[2]) showSubcatItems(parts[2]);
+    }
+  } else if (tab === 'store') {
+    switchTab('store');
+  } else {
+    // item tab (default)
+    switchTab('item');
+    if (parts[1] && pipelineData.length) {
+      document.getElementById('item-search').value = parts[1];
+      doSearch();
+    }
+  }
+}
+
+</script>
+
+</body>
+</html> + Math.round(v).toLocaleString();
 }
 
 // ─────────────────────────────────────────────────────────
