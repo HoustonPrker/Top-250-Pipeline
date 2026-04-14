@@ -1,0 +1,2 @@
+﻿-- STORE DETAIL - Per-item per-store breakdown
+-- TODO: Join PS_TKT_HIST_LIN with IM_INV, save to data/CK_store_detail.csv
