@@ -147,14 +147,15 @@ function processData(pText, nText, sText, dText) {
       dataReady = true;
 
       const subcatCount = new Set(pipelineData.map(i => `${i.CATEG_COD}|${i.SUBCAT_COD}`)).size;
-      const normCount   = Object.keys(normalityMap).length;
 
-      document.getElementById('sb-items').textContent   = `Items: ${pipelineData.length.toLocaleString()}`;
-      document.getElementById('sb-subcats').textContent = `Sub-categories: ${subcatCount}`;
-      document.getElementById('sb-norm').textContent    = `Normality records: ${normCount}`;
+      const ts = new Date().toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: 'numeric', minute: '2-digit'
+      });
+      document.getElementById('dash-footer-ts').textContent = `Data as of ${ts}`;
       document.getElementById('toolbar-status').textContent = `${pipelineData.length.toLocaleString()} items loaded`;
       document.getElementById('welcome-data-msg').textContent =
-        `${pipelineData.length.toLocaleString()} items · ${subcatCount} sub-categories · ${normCount} normality records loaded.`;
+        `${pipelineData.length.toLocaleString()} items · ${subcatCount} sub-categories loaded.`;
 
       // Show main app then auto-load item 4000
       hide('loading-screen');

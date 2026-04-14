@@ -99,52 +99,62 @@
 
       <!-- Item header -->
       <div class="item-header-card">
-        <div class="hdr-row1">
-          <div class="hdr-name"        id="h-name"></div>
-          <span class="hdr-badge"      id="h-itemno"></span>
-          <span class="hdr-rank-badge" id="h-rank"></span>
-        </div>
-        <div class="hdr-row2">
-          <div class="hdr-field"><span class="hdr-lbl">Category</span>    <span class="hdr-val" id="h-categ"></span></div>
-          <div class="hdr-field"><span class="hdr-lbl">Sub-Category</span> <span class="hdr-val" id="h-subcat"></span></div>
-          <div class="hdr-field"><span class="hdr-lbl">Rank Method</span>  <span class="hdr-val" id="h-method"></span></div>
-          <div class="hdr-field"><span class="hdr-lbl">Peers</span>        <span class="hdr-val" id="h-peers"></span></div>
+        <div class="hdr-two-col">
+          <div class="hdr-left">
+            <div class="hdr-name" id="h-name"></div>
+          </div>
+          <div class="hdr-right">
+            <div class="hdr-badges">
+              <span class="hdr-badge"      id="h-itemno"></span>
+              <span class="hdr-rank-badge" id="h-rank"></span>
+            </div>
+            <div class="hdr-meta">
+              <div class="hdr-field"><span class="hdr-lbl">Category</span>     <span class="hdr-val" id="h-categ"></span></div>
+              <div class="hdr-field"><span class="hdr-lbl">Sub-Category</span> <span class="hdr-val" id="h-subcat"></span></div>
+              <div class="hdr-field"><span class="hdr-lbl">Rank Method</span>  <span class="hdr-val" id="h-method"></span></div>
+              <div class="hdr-field"><span class="hdr-lbl">Peers</span>        <span class="hdr-val" id="h-peers"></span></div>
+            </div>
+            <a class="hdr-cat-link" id="h-catlink"></a>
+          </div>
         </div>
       </div>
 
       <!-- KPI cards -->
       <div class="kpi-row">
-        <div class="kpi-card">
+        <div class="kpi-card kpi-card-sales">
           <div class="kpi-lbl">90-Day Sales</div>
           <div class="kpi-val" id="k-qty90"></div>
           <div class="kpi-sub" id="k-amt90"></div>
+          <div class="kpi-note" id="k-txn"></div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card kpi-card-sales">
           <div class="kpi-lbl">30-Day Sales</div>
           <div class="kpi-val" id="k-qty30"></div>
           <div class="kpi-sub" id="k-amt30"></div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card kpi-card-sales">
           <div class="kpi-lbl">7-Day Sales</div>
           <div class="kpi-val" id="k-qty7"></div>
           <div class="kpi-sub" id="k-amt7"></div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card kpi-card-vel">
           <div class="kpi-lbl">Sales Velocity</div>
           <div class="kpi-val" id="k-vel"></div>
           <div class="kpi-sub" id="k-pct"></div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card kpi-card-status">
           <div class="kpi-lbl">Item Status</div>
           <div class="kpi-val" id="k-status"></div>
           <div class="kpi-sub" id="k-stock"></div>
+          <div class="kpi-note" id="k-stock-note"></div>
         </div>
       </div>
 
       <!-- Rank strip -->
       <div class="rank-strip">
         <div class="rank-text">
-          <div class="rank-main" id="rank-main"></div>
+          <div class="rank-main"   id="rank-main"></div>
+          <div class="rank-method" id="rank-method"></div>
         </div>
         <div class="rank-bar-wrap">
           <div class="rank-bar-fill" id="rank-bar" style="width:0%"></div>
@@ -163,7 +173,7 @@
           <div class="chart-container"><canvas id="chart-stores"></canvas></div>
         </div>
         <div class="chart-panel">
-          <div class="chart-title">Actual vs Projected 90D Qty</div>
+          <div class="chart-title">90D Actual vs Expected</div>
           <div class="chart-container"><canvas id="chart-compare"></canvas></div>
         </div>
       </div>
@@ -171,6 +181,7 @@
       <!-- Inventory table -->
       <div class="card" style="margin-bottom:16px">
         <div class="card-title">Inventory Summary</div>
+        <div class="inv-summary" id="inv-summary"></div>
         <div class="inv-wrap">
           <table class="data-table">
             <thead>
@@ -206,7 +217,7 @@
 
 <!-- ── Footer ──────────────────────────────────────────────── -->
 <div class="dash-footer">
-  <span id="sb-items"></span>&nbsp;&middot;&nbsp;<span id="sb-subcats"></span>&nbsp;&middot;&nbsp;<span id="sb-norm"></span>
+  <span id="dash-footer-ts">Loading data...</span>
 </div>
 
 <script src="js/utils.js"></script>

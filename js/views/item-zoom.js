@@ -37,7 +37,7 @@ function clearView() {
 function renderItem(item) {
   destroyCharts();
 
-  const { pct } = computePercentile(item);
+  const { pct, method } = computePercentile(item);
   const pctR = Math.round(pct * 10) / 10;
 
   show('item-view');
@@ -55,12 +55,28 @@ function renderItem(item) {
   const topPct    = rankTotal > 0 ? Math.round((1 - (rankNum - 1) / rankTotal) * 100) : 0;
   document.getElementById('h-rank').textContent = `Rank ${rankNum} of ${rankTotal} · Top ${topPct}%`;
 
+  // "View in Category →" link
+  const catLink = document.getElementById('h-catlink');
+  if (item.CATEG_COD && item.SUBCAT_COD) {
+    catLink.textContent = `View in Category →`;
+    catLink.onclick = () => {
+      switchTab('category');
+      // give category view a moment to render, then drill into this sub-cat
+      setTimeout(() => showCategoryDetail(item.CATEG_COD), 50);
+    };
+    catLink.style.display = '';
+  } else {
+    catLink.style.display = 'none';
+  }
+
   // ── KPI CARDS ───────────────────────────────────────────────
   const qty90 = parseFloat(item.RAW_QTY_90D) || 0;
   const amt90 = parseFloat(item.RAW_AMT_90D) || 0;
 
   document.getElementById('k-qty90').textContent = fmtQty(qty90);
   document.getElementById('k-amt90').textContent = fmt$(amt90);
+  document.getElementById('k-txn').textContent   =
+    `${parseInt(item.TXN_COUNT || 0).toLocaleString()} transactions`;
 
   // Real 30D and 7D from daily sales data
   const dailyData = getDailySalesForItem(item.ITEM_NO);
@@ -71,9 +87,8 @@ function renderItem(item) {
 
   document.getElementById('k-qty30').textContent = fmtQty(qty30);
   document.getElementById('k-amt30').textContent = fmt$(amt30);
-
-  document.getElementById('k-qty7').textContent = fmtQty(qty7);
-  document.getElementById('k-amt7').textContent = fmt$(amt7);
+  document.getElementById('k-qty7').textContent  = fmtQty(qty7);
+  document.getElementById('k-amt7').textContent  = fmt$(amt7);
 
   // Velocity — PCT_RECENT is already a percentage (26.6 = 26.6%)
   const pctRecent = parseFloat(item.PCT_RECENT) || 0;
@@ -82,25 +97,26 @@ function renderItem(item) {
   else if (pctRecent <  20) { velLabel = 'Trending Down'; velClass = 'vel-down'; velArrow = '↓'; }
   else                      { velLabel = 'Steady';        velClass = 'vel-ss';   velArrow = '→'; }
   document.getElementById('k-vel').innerHTML =
-    `<span class="${velClass}" style="font-size:28px;line-height:1">${velArrow}</span>&nbsp;<span class="${velClass}" style="font-size:15px">${velLabel}</span>`;
+    `<span class="${velClass}" style="font-size:20px;line-height:1">${velArrow}</span>&nbsp;<span class="${velClass}" style="font-size:20px">${velLabel}</span>`;
   document.getElementById('k-pct').textContent = `${pctRecent}% of 12M in last 90 days`;
 
   // Status
   const status = (item.STATUS || '').trim().toUpperCase();
-  const [stsCls, stsLbl] =
-    status === 'ACTIVE'       ? ['sts-active', '● ACTIVE']       :
-    status === 'OUT OF STOCK' ? ['sts-oos',    '● OUT OF STOCK'] :
-                                ['sts-ns',     '● NOT SELLING'];
+  const stsCls = status === 'ACTIVE' ? 'sts-active' : status === 'OUT OF STOCK' ? 'sts-oos' : 'sts-ns';
+  const stsLbl = status === 'ACTIVE' ? '● ACTIVE'   : status === 'OUT OF STOCK' ? '● OUT OF STOCK' : '● NOT SELLING';
   document.getElementById('k-status').innerHTML =
-    `<span class="${stsCls}" style="font-size:14px">${stsLbl}</span>`;
+    `<span class="${stsCls}" style="font-size:28px;font-weight:700">${stsLbl}</span>`;
   document.getElementById('k-stock').textContent =
     `${fmtQty(item.QTY_AVAIL_ALL_STORES)} units available`;
+  document.getElementById('k-stock-note').textContent =
+    `${item.STORES_WITH_STOCK || 0} stores with stock`;
 
   // ── RANK STRIP ───────────────────────────────────────────────
   const topPctStrip = Math.round((100 - pctR) * 10) / 10;
   document.getElementById('rank-main').innerHTML =
     `Sub-category rank: <strong>${rankNum}</strong> of <strong>${rankTotal}</strong>`
     + ` — <span class="rank-pct">Top ${topPctStrip}%</span> of ${item.SUBCAT_COD} items`;
+  document.getElementById('rank-method').textContent = `Percentile method: ${method}`;
   document.getElementById('rank-bar').style.width     = `${Math.min(100, pctR)}%`;
   document.getElementById('rank-bar-lbl').textContent = `Top ${topPctStrip}%`;
 
@@ -108,16 +124,20 @@ function renderItem(item) {
   renderCharts(item, qty90);
 
   // ── INVENTORY TABLE ──────────────────────────────────────────
-  const tbody = document.getElementById('inv-body');
-  tbody.innerHTML = '';
-
-  const aggRow = tbody.insertRow();
-  aggRow.className = 'agg-row';
   const qtyOH = parseFloat(item.QTY_ON_HND_ALL_STORES) || 0;
   const qtyAv = parseFloat(item.QTY_AVAIL_ALL_STORES)  || 0;
   const stksN = parseInt(item.STORES_WITH_STOCK)        || 0;
   const q12m  = parseFloat(item.RAW_QTY_12M_TOTAL)      || 0;
   const a12m  = parseFloat(item.RAW_AMT_12M_TOTAL)      || 0;
+
+  document.getElementById('inv-summary').textContent =
+    `${fmtQty(qtyAv)} units available across ${stksN} stores`;
+
+  const tbody = document.getElementById('inv-body');
+  tbody.innerHTML = '';
+
+  const aggRow = tbody.insertRow();
+  aggRow.className = 'agg-row';
   aggRow.innerHTML = `
     <td>ALL STORES (Aggregate)</td>
     <td class="num">${fmtQty(qtyOH)}</td>
@@ -129,8 +149,5 @@ function renderItem(item) {
 
   const noteRow = tbody.insertRow();
   noteRow.className = 'note-row';
-  noteRow.innerHTML = `<td colspan="7" style="cursor:default">
-    ℹ Per-store detail requires IM_INV join (not available in POC dataset).
-    QTY_ON_HND and QTY_AVAIL are aggregated across all stores in the pipeline query.
-  </td>`;
+  noteRow.innerHTML = `<td colspan="7" style="cursor:default">Per-store breakdown coming soon</td>`;
 }

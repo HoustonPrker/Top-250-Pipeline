@@ -73,6 +73,27 @@ function renderCharts(item, qty90) {
   }
 
   // ── 2. Store Stock Doughnut ──────────────────────────────────
+  const centerText = {
+    id: 'doughnutCenter',
+    beforeDraw(chart) {
+      const { width, height, ctx } = chart;
+      ctx.save();
+      const text    = `${stksW} of ${maxStores}`;
+      const subText = 'stores';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      const cx = width / 2;
+      const cy = height / 2 - 10;
+      ctx.font = `700 15px Inter, sans-serif`;
+      ctx.fillStyle = '#1a2332';
+      ctx.fillText(text, cx, cy);
+      ctx.font = `12px Inter, sans-serif`;
+      ctx.fillStyle = '#6b7280';
+      ctx.fillText(subText, cx, cy + 18);
+      ctx.restore();
+    }
+  };
+
   activeCharts.pie = new Chart(
     document.getElementById('chart-stores').getContext('2d'), {
     type: 'doughnut',
@@ -90,12 +111,13 @@ function renderCharts(item, qty90) {
       plugins: {
         legend: {
           display: true, position: 'bottom',
-          labels: { font: { size: 9, family: 'SF Mono, monospace' }, boxWidth: 12, padding: 6 }
+          labels: { font: { size: 12, family: 'Inter, sans-serif' }, boxWidth: 12, padding: 8 }
         },
         tooltip: { callbacks: { label: ctx => ` ${ctx.label}` } }
       },
-      cutout: '50%'
-    }
+      cutout: '55%'
+    },
+    plugins: [centerText]
   });
 
   // ── 3. Actual vs Expected Bar ────────────────────────────────
@@ -104,7 +126,7 @@ function renderCharts(item, qty90) {
     document.getElementById('chart-compare').getContext('2d'), {
     type: 'bar',
     data: {
-      labels: ['Actual 90D', 'Projected'],
+      labels: ['Actual', 'Expected'],
       datasets: [{
         data: [qty90, Math.round(expected)],
         backgroundColor: [velColor, '#d1d5db'],
