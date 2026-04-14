@@ -50,8 +50,9 @@ function renderCatOverview() {
       case 'subcats':  return dir * (a.subcats - b.subcats);
       case 'qty':      return dir * (a.qty - b.qty);
       case 'revenue':  return dir * (a.rev - b.rev);
+      case 'qty30':    return dir * (a.qty - b.qty);
+      case 'rev30':    return dir * (a.rev - b.rev);
       case 'vel':      return dir * (a.vel - b.vel);
-      case 'trending': return dir * (a.trendUp - b.trendUp);
       default:         return dir * (a.rev - b.rev);
     }
   });
@@ -61,13 +62,14 @@ function renderCatOverview() {
   const totalCats  = catList.length;
 
   const cols = [
-    { key: 'name',     label: 'Category' },
-    { key: 'items',    label: 'Items',       cls: 'num' },
-    { key: 'subcats',  label: 'Sub-cats',    cls: 'num' },
-    { key: 'qty',      label: '90D Qty',     cls: 'num' },
-    { key: 'revenue',  label: '90D Revenue', cls: 'num' },
-    { key: 'vel',      label: 'Avg Velocity',cls: 'num' },
-    { key: 'trending', label: 'Trending Up', cls: 'num' },
+    { key: 'name',    label: 'Category' },
+    { key: 'items',   label: 'Items',                    cls: 'num-ctr' },
+    { key: 'subcats', label: 'Sub-cats',                 cls: 'num-ctr' },
+    { key: 'qty',     label: '90D Qty',                  cls: 'num-ctr' },
+    { key: 'revenue', label: '90D Revenue',               cls: 'num-ctr' },
+    { key: 'qty30',   label: '30D Qty',     cls: 'num-ctr' },
+    { key: 'rev30',   label: '30D Revenue', cls: 'num-ctr' },
+    { key: 'vel',     label: 'Avg Velocity',              cls: 'num-ctr' },
   ];
 
   const thead = cols.map(c => {
@@ -78,29 +80,30 @@ function renderCatOverview() {
   }).join('');
 
   const tbody = catList.map((c, idx) => {
-    const velCls      = c.vel >= 30 ? 'vel-up' : c.vel < 20 ? 'vel-down' : 'vel-ss';
-    const velArrow    = c.vel >= 30 ? '↑'      : c.vel < 20 ? '↓'        : '→';
-    const trendPct    = c.itemCount > 0 ? Math.round((c.trendUp / c.itemCount) * 100) : 0;
-    const trendTip    = `${c.trendUp} of ${c.itemCount} items trending up`;
-    const isTop5      = idx < 5;
-    const isGroupEnd  = (idx + 1) % 5 === 0 && idx !== catList.length - 1;
-    const rowCls      = [isTop5 ? 'cat-top5' : '', isGroupEnd ? 'cat-group-end' : ''].filter(Boolean).join(' ');
+    const velCls     = c.vel >= 30 ? 'vel-up' : c.vel < 20 ? 'vel-down' : 'vel-ss';
+    const velArrow   = c.vel >= 30 ? '↑'      : c.vel < 20 ? '↓'        : '→';
+    const isTop5     = idx < 5;
+    const isGroupEnd = (idx + 1) % 5 === 0 && idx !== catList.length - 1;
+    const rowCls     = [isTop5 ? 'cat-top5' : '', isGroupEnd ? 'cat-group-end' : ''].filter(Boolean).join(' ');
     return `<tr class="${rowCls}" onclick="showCategoryDetail('${c.name.replace(/'/g, "\\'")}')">
       <td class="cat-name-cell"><strong>${c.name}</strong></td>
-      <td class="num">${c.itemCount.toLocaleString()}</td>
-      <td class="num">${c.subcats}</td>
-      <td class="num">${fmtQty(c.qty)}</td>
-      <td class="num">${fmtRevMM(c.rev)}</td>
-      <td class="num"><span class="${velCls}">${velArrow}</span> ${c.vel.toFixed(1)}%</td>
-      <td class="num" title="${trendTip}">${trendPct}% <span class="vel-up" style="font-size:11px">&#8593;</span></td>
+      <td class="num-ctr">${c.itemCount.toLocaleString()}</td>
+      <td class="num-ctr">${c.subcats}</td>
+      <td class="num-ctr">${fmtQty(c.qty)}</td>
+      <td class="num-ctr">${fmtRevMM(c.rev)}</td>
+      <td class="num-ctr">${fmtQty(c.qty / 3)}</td>
+      <td class="num-ctr">${fmtRevMM(c.rev / 3)}</td>
+      <td class="num-ctr"><span class="${velCls}">${velArrow}</span> ${c.vel.toFixed(1)}%</td>
     </tr>`;
   }).join('');
 
   document.getElementById('cat-view-content').innerHTML = `
-    <div class="cat-summary-bar">
-      <div class="cat-summary-stat"><div class="cat-summary-lbl">Categories</div><div class="cat-summary-val">${totalCats}</div></div>
-      <div class="cat-summary-stat"><div class="cat-summary-lbl">Total Items</div><div class="cat-summary-val">${totalItems.toLocaleString()}</div></div>
-      <div class="cat-summary-stat"><div class="cat-summary-lbl">90D Revenue</div><div class="cat-summary-val">${fmtRevMM(totalRev)}</div></div>
+    <div class="cat-stat-bar">
+      <div class="cat-stat-item"><span class="cat-stat-lbl">Categories:</span><span class="cat-stat-val">${totalCats}</span></div>
+      <span class="cat-stat-sep">·</span>
+      <div class="cat-stat-item"><span class="cat-stat-lbl">Total Items:</span><span class="cat-stat-val">${totalItems.toLocaleString()}</span></div>
+      <span class="cat-stat-sep">·</span>
+      <div class="cat-stat-item"><span class="cat-stat-lbl">90D Revenue:</span><span class="cat-stat-val">${fmtRevMM(totalRev)}</span></div>
     </div>
     <div class="inv-wrap">
       <table class="data-table">
@@ -145,6 +148,8 @@ function showCategoryDetail(catName) {
       case 'items':   return dir * (a.itemCount - b.itemCount);
       case 'qty':     return dir * (a.qty - b.qty);
       case 'revenue': return dir * (a.rev - b.rev);
+      case 'qty30':   return dir * (a.qty - b.qty);
+      case 'rev30':   return dir * (a.rev - b.rev);
       case 'vel':     return dir * (a.vel - b.vel);
       default:        return dir * (a.rev - b.rev);
     }
@@ -153,11 +158,13 @@ function showCategoryDetail(catName) {
   const cols = [
     { key: '',        label: '' },   // accordion toggle
     { key: 'name',    label: 'Sub-Category' },
-    { key: 'items',   label: 'Items',       cls: 'num' },
-    { key: 'qty',     label: '90D Qty',     cls: 'num' },
-    { key: 'revenue', label: '90D Revenue', cls: 'num' },
-    { key: 'vel',     label: 'Avg Velocity',cls: 'num' },
-    { key: '',        label: 'Normal?',     cls: 'num' },
+    { key: 'items',   label: 'Items',        cls: 'num-ctr' },
+    { key: 'qty',     label: '90D Qty',      cls: 'num-ctr' },
+    { key: 'revenue', label: '90D Revenue',  cls: 'num-ctr' },
+    { key: 'qty30',   label: '30D Qty',     cls: 'num-ctr' },
+    { key: 'rev30',   label: '30D Revenue', cls: 'num-ctr' },
+    { key: 'vel',     label: 'Avg Velocity', cls: 'num-ctr' },
+    { key: '',        label: 'Normal?',      cls: 'num-ctr' },
   ];
 
   const thead = cols.map(c => {
@@ -168,7 +175,7 @@ function showCategoryDetail(catName) {
     return `<th class="${cls}" onclick="subcatDetailSortBy('${catName.replace(/'/g, "\\'")}','${c.key}')">${c.label}<span class="sort-icon">${icon}</span></th>`;
   }).join('');
 
-  const tbody = subcatList.map((sub, idx) => {
+  const tbody = subcatList.map(sub => {
     const velCls    = sub.vel >= 30 ? 'vel-up' : sub.vel < 20 ? 'vel-down' : 'vel-ss';
     const velArrow  = sub.vel >= 30 ? '↑' : sub.vel < 20 ? '↓' : '→';
     const normBadge = sub.norm
@@ -181,14 +188,16 @@ function showCategoryDetail(catName) {
       <tr class="subcat-header-row" onclick="toggleSubcatAccordion('${safeId}', '${catName.replace(/'/g, "\\'")}', '${sub.name.replace(/'/g, "\\'")}')">
         <td style="width:28px;text-align:center"><span class="acc-toggle-btn" id="acc-btn-${safeId}">▶</span></td>
         <td><strong>${sub.name}</strong></td>
-        <td class="num">${sub.itemCount}</td>
-        <td class="num">${fmtQty(sub.qty)}</td>
-        <td class="num">${fmtRevMM(sub.rev)}</td>
-        <td class="num"><span class="${velCls}">${velArrow}</span> ${sub.vel.toFixed(1)}%</td>
-        <td class="num">${normBadge}</td>
+        <td class="num-ctr">${sub.itemCount}</td>
+        <td class="num-ctr">${fmtQty(sub.qty)}</td>
+        <td class="num-ctr">${fmtRevMM(sub.rev)}</td>
+        <td class="num-ctr">${fmtQty(sub.qty / 3)}</td>
+        <td class="num-ctr">${fmtRevMM(sub.rev / 3)}</td>
+        <td class="num-ctr"><span class="${velCls}">${velArrow}</span> ${sub.vel.toFixed(1)}%</td>
+        <td class="num-ctr">${normBadge}</td>
       </tr>
       <tr class="acc-expand-row" id="acc-row-${safeId}" style="display:none">
-        <td colspan="7"><div class="acc-content" id="acc-content-${safeId}"></div></td>
+        <td colspan="9"><div class="acc-content" id="acc-content-${safeId}"></div></td>
       </tr>`;
   }).join('');
 
@@ -199,10 +208,12 @@ function showCategoryDetail(catName) {
       <span style="color:#1a2332;font-weight:600">${catName}</span>
     </div>
     <div class="cat-section-heading">${catName} — Sub-categories</div>
-    <div class="cat-summary-bar">
-      <div class="cat-summary-stat"><div class="cat-summary-lbl">Sub-categories</div><div class="cat-summary-val">${subcatList.length}</div></div>
-      <div class="cat-summary-stat"><div class="cat-summary-lbl">Total Items</div><div class="cat-summary-val">${cat.items.length.toLocaleString()}</div></div>
-      <div class="cat-summary-stat"><div class="cat-summary-lbl">90D Revenue</div><div class="cat-summary-val">${fmtRevMM(catRev)}</div></div>
+    <div class="cat-stat-bar">
+      <div class="cat-stat-item"><span class="cat-stat-lbl">Sub-categories:</span><span class="cat-stat-val">${subcatList.length}</span></div>
+      <span class="cat-stat-sep">·</span>
+      <div class="cat-stat-item"><span class="cat-stat-lbl">Total Items:</span><span class="cat-stat-val">${cat.items.length.toLocaleString()}</span></div>
+      <span class="cat-stat-sep">·</span>
+      <div class="cat-stat-item"><span class="cat-stat-lbl">90D Revenue:</span><span class="cat-stat-val">${fmtRevMM(catRev)}</span></div>
     </div>
     <div class="inv-wrap">
       <table class="data-table">
