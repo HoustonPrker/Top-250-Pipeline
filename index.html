@@ -1111,10 +1111,10 @@ function renderItem(item) {
 
   // ── KPI: Velocity ──
   var velCls = 'vel-ss', velLbl = 'Steady';
-  if (pctRecent > 0.30)      { velCls = 'vel-up';   velLbl = 'Trending Up ↑'; }
-  else if (pctRecent < 0.20) { velCls = 'vel-down'; velLbl = 'Trending Down ↓'; }
+  if (pctRecent > 30)      { velCls = 'vel-up';   velLbl = 'Trending Up ↑'; }
+  else if (pctRecent < 20) { velCls = 'vel-down'; velLbl = 'Trending Down ↓'; }
   document.getElementById('k-vel').innerHTML  = '<span class="' + velCls + '">' + velLbl + '</span>';
-  document.getElementById('k-pct').textContent = (pctRecent * 100).toFixed(1) + '% of 12M sales in last 90D';
+  document.getElementById('k-pct').textContent = pctRecent.toFixed(1) + '% of 12M sales in last 90D';
 
   // ── KPI: Status ──
   var status = (item.STATUS || '').trim();
