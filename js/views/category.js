@@ -5,6 +5,12 @@
 
 let catSortCol = 'revenue', catSortDir = 'desc';
 let subcatSortCol = 'revenue', subcatSortDir = 'desc';
+let catViewCharts = {};
+
+function destroyCatCharts() {
+  Object.values(catViewCharts).forEach(c => { try { c.destroy(); } catch (_) {} });
+  catViewCharts = {};
+}
 
 // ── Data aggregation ─────────────────────────────────────────
 
@@ -31,6 +37,8 @@ function renderCategoryView() {
 // ── Category overview table ───────────────────────────────────
 
 function renderCatOverview() {
+  destroyCatCharts();
+
   const catMap  = buildCategoryMap();
   const catList = Object.values(catMap).map(cat => {
     const rev     = cat.items.reduce((s, i) => s + (parseFloat(i.RAW_AMT_90D) || 0), 0);
@@ -63,13 +71,13 @@ function renderCatOverview() {
 
   const cols = [
     { key: 'name',    label: 'Category' },
-    { key: 'items',   label: 'Items',                    cls: 'num-ctr' },
-    { key: 'subcats', label: 'Sub-cats',                 cls: 'num-ctr' },
-    { key: 'qty',     label: '90D Qty',                  cls: 'num-ctr' },
-    { key: 'revenue', label: '90D Revenue',               cls: 'num-ctr' },
-    { key: 'qty30',   label: '30D Qty',     cls: 'num-ctr' },
-    { key: 'rev30',   label: '30D Revenue', cls: 'num-ctr' },
-    { key: 'vel',     label: 'Avg Velocity',              cls: 'num-ctr' },
+    { key: 'items',   label: 'Items',        cls: 'num-ctr' },
+    { key: 'subcats', label: 'Sub-cats',     cls: 'num-ctr' },
+    { key: 'qty',     label: '90D Qty',      cls: 'num-ctr' },
+    { key: 'revenue', label: '90D Revenue',  cls: 'num-ctr' },
+    { key: 'qty30',   label: '30D Qty',      cls: 'num-ctr' },
+    { key: 'rev30',   label: '30D Revenue',  cls: 'num-ctr' },
+    { key: 'vel',     label: 'Avg Velocity', cls: 'num-ctr' },
   ];
 
   const thead = cols.map(c => {
@@ -105,12 +113,138 @@ function renderCatOverview() {
       <span class="cat-stat-sep">·</span>
       <div class="cat-stat-item"><span class="cat-stat-lbl">90D Revenue:</span><span class="cat-stat-val">${fmtRevMM(totalRev)}</span></div>
     </div>
+    <div class="chart-row-2">
+      <div class="chart-panel">
+        <div class="chart-panel-title">Category Revenue (90D)</div>
+        <div class="chart-container" style="height:420px"><canvas id="cat-bar-chart"></canvas></div>
+      </div>
+      <div class="chart-panel">
+        <div class="chart-panel-title">Top 5 Categories by Revenue</div>
+        <div class="chart-container" style="height:420px"><canvas id="cat-donut-chart"></canvas></div>
+      </div>
+    </div>
     <div class="inv-wrap">
       <table class="data-table">
         <thead><tr>${thead}</tr></thead>
         <tbody>${tbody}</tbody>
       </table>
     </div>`;
+
+  setTimeout(() => renderCatCharts(catList), 0);
+}
+
+function renderCatCharts(catList) {
+  // Sort by revenue desc for the bar chart
+  const sorted = [...catList].sort((a, b) => b.rev - a.rev);
+
+  const barColors = sorted.map(c =>
+    c.vel > 35 ? '#16a34a' : c.vel >= 25 ? '#d97706' : '#dc2626'
+  );
+
+  const tooltipDefaults = {
+    backgroundColor: '#fff',
+    titleColor: '#1a2332',
+    bodyColor: '#374151',
+    borderColor: '#e5e7eb',
+    borderWidth: 1,
+    padding: 10,
+    titleFont: { family: 'Inter, sans-serif', size: 12, weight: '600' },
+    bodyFont: { family: 'Inter, sans-serif', size: 12 }
+  };
+
+  // ── Horizontal bar chart ──────────────────────────────────────
+  const barCtx = document.getElementById('cat-bar-chart');
+  if (barCtx) {
+    catViewCharts.bar = new Chart(barCtx.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: sorted.map(c => c.name),
+        datasets: [{
+          data: sorted.map(c => c.rev),
+          backgroundColor: barColors,
+          borderColor: barColors.map(c => c),
+          borderWidth: 0,
+          borderRadius: 3
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...tooltipDefaults,
+            callbacks: {
+              label: ctx => ` ${fmtRevMM(ctx.parsed.x)}`
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              font: { size: 11, family: 'Inter, sans-serif' },
+              color: '#6b7280',
+              callback: v => fmtRevMM(v)
+            },
+            grid: { color: 'rgba(0,0,0,0.04)' }
+          },
+          y: {
+            ticks: { font: { size: 11, family: 'Inter, sans-serif' }, color: '#374151' },
+            grid: { display: false }
+          }
+        }
+      }
+    });
+  }
+
+  // ── Top-5 doughnut ────────────────────────────────────────────
+  const donutCtx = document.getElementById('cat-donut-chart');
+  if (donutCtx) {
+    const top5   = sorted.slice(0, 5);
+    const others = sorted.slice(5);
+    const otherRev = others.reduce((s, c) => s + c.rev, 0);
+    const palette  = ['#1a3550', '#2d4a6e', '#3d5a80', '#6b8aad', '#9bb5d0', '#d1d5db'];
+
+    const labels = [...top5.map(c => c.name), `Other (${others.length} categories)`];
+    const data   = [...top5.map(c => c.rev), otherRev];
+
+    catViewCharts.donut = new Chart(donutCtx.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data,
+          backgroundColor: palette,
+          borderColor: '#fff',
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '52%',
+        plugins: {
+          legend: {
+            display: true,
+            position: 'bottom',
+            labels: {
+              font: { size: 11, family: 'Inter, sans-serif' },
+              color: '#374151',
+              boxWidth: 12,
+              padding: 8
+            }
+          },
+          tooltip: {
+            ...tooltipDefaults,
+            callbacks: {
+              label: ctx => ` ${fmtRevMM(ctx.parsed)} (${((ctx.parsed / ctx.dataset.data.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`
+            }
+          }
+        }
+      }
+    });
+  }
 }
 
 function catSortBy(col) {
@@ -126,6 +260,8 @@ function catSortBy(col) {
 // ── Category detail (sub-categories) ─────────────────────────
 
 function showCategoryDetail(catName) {
+  destroyCatCharts();
+
   const catMap = buildCategoryMap();
   const cat    = catMap[catName];
   if (!cat) return;
@@ -156,13 +292,13 @@ function showCategoryDetail(catName) {
   });
 
   const cols = [
-    { key: '',        label: '' },   // accordion toggle
+    { key: '',        label: '' },
     { key: 'name',    label: 'Sub-Category' },
     { key: 'items',   label: 'Items',        cls: 'num-ctr' },
     { key: 'qty',     label: '90D Qty',      cls: 'num-ctr' },
     { key: 'revenue', label: '90D Revenue',  cls: 'num-ctr' },
-    { key: 'qty30',   label: '30D Qty',     cls: 'num-ctr' },
-    { key: 'rev30',   label: '30D Revenue', cls: 'num-ctr' },
+    { key: 'qty30',   label: '30D Qty',      cls: 'num-ctr' },
+    { key: 'rev30',   label: '30D Revenue',  cls: 'num-ctr' },
     { key: 'vel',     label: 'Avg Velocity', cls: 'num-ctr' },
     { key: '',        label: 'Normal?',      cls: 'num-ctr' },
   ];
@@ -201,6 +337,8 @@ function showCategoryDetail(catName) {
       </tr>`;
   }).join('');
 
+  const chartH = Math.max(180, subcatList.length * 32);
+
   document.getElementById('cat-view-content').innerHTML = `
     <div class="cat-nav-breadcrumb">
       <a class="cat-back-link" onclick="renderCatOverview()">← All Categories</a>
@@ -215,12 +353,74 @@ function showCategoryDetail(catName) {
       <span class="cat-stat-sep">·</span>
       <div class="cat-stat-item"><span class="cat-stat-lbl">90D Revenue:</span><span class="cat-stat-val">${fmtRevMM(catRev)}</span></div>
     </div>
+    <div class="chart-panel" style="margin-bottom:16px">
+      <div class="chart-panel-title">Sub-Category Revenue (90D)</div>
+      <div class="chart-container" style="height:${chartH}px"><canvas id="subcat-bar-chart"></canvas></div>
+    </div>
     <div class="inv-wrap">
       <table class="data-table">
         <thead><tr>${thead}</tr></thead>
         <tbody>${tbody}</tbody>
       </table>
     </div>`;
+
+  setTimeout(() => renderSubcatChart(subcatList), 0);
+}
+
+function renderSubcatChart(subcatList) {
+  const sorted = [...subcatList].sort((a, b) => b.rev - a.rev);
+  const barColors = sorted.map(s =>
+    s.vel > 35 ? '#16a34a' : s.vel >= 25 ? '#d97706' : '#dc2626'
+  );
+
+  const ctx = document.getElementById('subcat-bar-chart');
+  if (!ctx) return;
+
+  catViewCharts.subcatBar = new Chart(ctx.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: sorted.map(s => s.name),
+      datasets: [{
+        data: sorted.map(s => s.rev),
+        backgroundColor: barColors,
+        borderWidth: 0,
+        borderRadius: 3
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#fff',
+          titleColor: '#1a2332',
+          bodyColor: '#374151',
+          borderColor: '#e5e7eb',
+          borderWidth: 1,
+          padding: 10,
+          titleFont: { family: 'Inter, sans-serif', size: 12, weight: '600' },
+          bodyFont: { family: 'Inter, sans-serif', size: 12 },
+          callbacks: { label: ctx => ` ${fmtRevMM(ctx.parsed.x)}` }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            font: { size: 11, family: 'Inter, sans-serif' },
+            color: '#6b7280',
+            callback: v => fmtRevMM(v)
+          },
+          grid: { color: 'rgba(0,0,0,0.04)' }
+        },
+        y: {
+          ticks: { font: { size: 11, family: 'Inter, sans-serif' }, color: '#374151' },
+          grid: { display: false }
+        }
+      }
+    }
+  });
 }
 
 function subcatDetailSortBy(catName, col) {
@@ -260,20 +460,19 @@ function buildAccordionItems(container, catName, subcatName) {
     i => i.CATEG_COD === catName && i.SUBCAT_COD === subcatName
   );
 
-  // Pre-compute percentiles
   const withPct = items.map(item => {
     const { pct } = computePercentile(item);
     return { item, pct };
   });
 
-  // Sort by percentile desc
   withPct.sort((a, b) => b.pct - a.pct);
 
   const rows = withPct.map(({ item, pct }) => {
-    const pctR    = Math.round(pct * 10) / 10;
-    const pctCls  = pct >= 75 ? 'pct-green' : pct >= 25 ? 'pct-yellow' : 'pct-red';
-    const velCls  = (parseFloat(item.PCT_RECENT) || 0) >= 30 ? 'vel-up'
-                  : (parseFloat(item.PCT_RECENT) || 0) < 20   ? 'vel-down' : 'vel-ss';
+    const pctR     = Math.round(pct * 10) / 10;
+    const pctCls   = pct >= 75 ? 'pct-green' : pct >= 25 ? 'pct-yellow' : 'pct-red';
+    const sparkCls = pct >= 75 ? 'spark-green' : pct >= 25 ? 'spark-yellow' : 'spark-red';
+    const velCls   = (parseFloat(item.PCT_RECENT) || 0) >= 30 ? 'vel-up'
+                   : (parseFloat(item.PCT_RECENT) || 0) < 20  ? 'vel-down' : 'vel-ss';
     const velArrow = (parseFloat(item.PCT_RECENT) || 0) >= 30 ? '↑'
                    : (parseFloat(item.PCT_RECENT) || 0) < 20  ? '↓' : '→';
     const status   = (item.STATUS || '').trim().toUpperCase();
@@ -283,7 +482,10 @@ function buildAccordionItems(container, catName, subcatName) {
     return `<tr onclick="zoomToItem('${(item.ITEM_NO||'').replace(/'/g,"\\'")}')">
       <td><a class="item-link">${item.ITEM_NO || '—'}</a></td>
       <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${item.ITEM_NAME || '—'}</td>
-      <td class="num"><span class="pct-badge ${pctCls}">${pctR}th</span></td>
+      <td class="num">
+        <span class="pct-badge ${pctCls}">${pctR}th</span>
+        <div class="pct-spark"><div class="pct-spark-fill ${sparkCls}" style="width:${Math.min(100, pctR)}%"></div></div>
+      </td>
       <td class="num">${fmtQty(item.RAW_QTY_90D)}</td>
       <td class="num">${fmt$(item.RAW_AMT_90D)}</td>
       <td class="num"><span class="${velCls}">${velArrow}</span> ${parseFloat(item.PCT_RECENT)||0}%</td>

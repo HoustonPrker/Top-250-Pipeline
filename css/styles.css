@@ -259,6 +259,19 @@ th.sort-th.sort-active .sort-icon { opacity: 1; }
 .cs-note { font-size: 13px; color: #9ca3af; font-style: italic; }
 .cs-note code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-family: 'SF Mono', Fira Code, monospace; font-style: normal; }
 
+/* ── CHART PANELS & GRIDS ────────────────── */
+.chart-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.chart-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.chart-panel { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 16px 20px; }
+.chart-panel-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: #3d5a80; margin-bottom: 12px; }
+
+/* ── ACCORDION SPARKLINES ─────────────────── */
+.pct-spark { display: inline-block; width: 60px; height: 6px; background: #f0f2f5; border-radius: 3px; margin-left: 6px; vertical-align: middle; overflow: hidden; }
+.pct-spark-fill { height: 100%; border-radius: 3px; }
+.spark-green  { background: #16a34a; }
+.spark-yellow { background: #d97706; }
+.spark-red    { background: #dc2626; }
+
 /* ── STORE TIER BADGES ────────────────────── */
 .tier-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; text-transform: uppercase; white-space: nowrap; color: #fff; }
 .tier-high   { background: #16a34a; }
