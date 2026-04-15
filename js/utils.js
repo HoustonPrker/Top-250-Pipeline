@@ -27,7 +27,7 @@ function getDailySalesForItem(itemNo) {
   // Use the item's own rows to find range if available, else fall back to 90-day window
   if (rows.length > 0) {
     rows.forEach(r => {
-      const d = r.SALE_DATE;
+      const d = (r.POST_DATE || r.SALE_DATE || '').slice(0, 10);
       if (!minDate || d < minDate) minDate = d;
       if (!maxDate || d > maxDate) maxDate = d;
     });
@@ -48,7 +48,11 @@ function getDailySalesForItem(itemNo) {
   // Build lookup by date for this item
   const byDate = {};
   rows.forEach(r => {
-    byDate[r.SALE_DATE] = { qty: parseFloat(r.DAILY_QTY) || 0, amt: parseFloat(r.DAILY_AMT) || 0 };
+    const dateKey = (r.POST_DATE || r.SALE_DATE || '').slice(0, 10);
+    byDate[dateKey] = {
+      qty: parseFloat(r.QTY_SOLD ?? r.DAILY_QTY) || 0,
+      amt: parseFloat(r.EXT_PRC  ?? r.DAILY_AMT)  || 0
+    };
   });
 
   // Walk every date from minDate to maxDate, zero-filling gaps
