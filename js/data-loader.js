@@ -1,57 +1,10 @@
 // ============================================================
-// DATA LOADER — API + CSV fallback
-// Populates globals: pipelineData, normalityMap, storeData
-// (declared in app.js)
+// DATA LOADER — CSV files (written nightly by scripts/export_data.py)
+// Populates globals: pipelineData, normalityMap, storeData,
+//                    dailySalesData, dailySalesIndex (declared in app.js)
 // ============================================================
 
-const API_BASE = 'http://172.16.20.185:8085';
-const API_KEY  = '26G3t29ecBtvmGpbKOoVnql34eNYfUoy';
-
-// ── API helpers ───────────────────────────────────────────────
-
-async function apiGet(path) {
-  const r = await fetch(API_BASE + path, {
-    headers: { 'X-Api-Key': API_KEY }
-  });
-  if (!r.ok) throw new Error(`API ${r.status} — ${path}`);
-  return r.json();
-}
-
-// Fetch all rows from a /tables/ view, loading pages in parallel
-// batches of 10 for speed. Calls onProgress(loaded, total) each batch.
-async function fetchTableAll(viewName, onProgress) {
-  const first = await apiGet(
-    `/api/v1/tables/${viewName}/rows?pageSize=200&compact=true&page=1`
-  );
-  const env        = first.data;
-  const total      = env.totalCount   || 0;
-  const totalPages = env.totalPages   || 1;
-  const rows       = [...(env.data    || [])];
-
-  if (onProgress) onProgress(rows.length, total);
-  if (!env.hasNextPage) return rows;
-
-  // Fetch remaining pages in parallel batches of 10
-  const BATCH_SIZE = 10;
-  for (let start = 2; start <= totalPages; start += BATCH_SIZE) {
-    const pageNums = [];
-    for (let p = start; p < start + BATCH_SIZE && p <= totalPages; p++) {
-      pageNums.push(p);
-    }
-    const results = await Promise.all(
-      pageNums.map(p =>
-        apiGet(`/api/v1/tables/${viewName}/rows?pageSize=200&compact=true&page=${p}`)
-      )
-    );
-    results.forEach(r => rows.push(...(r.data?.data || [])));
-    if (onProgress) onProgress(rows.length, total);
-  }
-
-  return rows;
-}
-
-// ── Minimal CSV parser (handles quotes, commas, BOM) ─────────
-
+// Minimal CSV parser (handles quotes, commas in values, BOM)
 var Papa = {
   parse: function(text, opts) {
     text = text.replace(/^\uFEFF/, '');
@@ -99,107 +52,106 @@ function setLoadProgress(pct) {
   if (bar) bar.style.width = Math.min(100, Math.round(pct)) + '%';
 }
 
-// ── Boot: load everything ─────────────────────────────────────
+// ── Main load ─────────────────────────────────────────────────
 
 async function loadData() {
   hide('file-picker');
   show('loading-screen');
-  setLoadMsg('Connecting to API…');
+  setLoadMsg('Fetching CSV files…');
   setLoadProgress(0);
 
   try {
-    // ── 1. Pipeline data from API ─────────────────────────────
-    setLoadMsg('Loading pipeline data…');
-    const pipelineRows = await fetchTableAll('USER_VI_CK_Pipeline', (loaded, total) => {
-      const pct = total > 0 ? (loaded / total) * 70 : 0;
-      setLoadProgress(pct);
-      setLoadMsg(`Loading pipeline data… ${loaded.toLocaleString()} / ${total.toLocaleString()} items`);
-    });
-    pipelineData = pipelineRows;
-    setLoadProgress(70);
+    const [pRes, nRes, sRes, dRes] = await Promise.all([
+      fetch('data/CK_math_pipeline_data.csv'),
+      fetch('data/CK_normality_results.csv'),
+      fetch('data/CK_store_data.csv'),
+      fetch('data/CK_daily_sales.csv'),
+    ]);
 
-    // ── 2. Store data from CSV ────────────────────────────────
-    setLoadMsg('Loading store data…');
-    let sText = '';
-    try {
-      const sr = await fetch('data/CK_store_data.csv');
-      if (sr.ok) sText = await sr.text();
-    } catch (_) {}
+    if (!pRes.ok) throw new Error('Could not load CK_math_pipeline_data.csv');
+    if (!nRes.ok) throw new Error('Could not load CK_normality_results.csv');
+    if (!sRes.ok) throw new Error('Could not load CK_store_data.csv');
+    if (!dRes.ok) throw new Error('Could not load CK_daily_sales.csv');
 
-    if (sText) {
-      storeData = Papa.parse(sText, {
-        header: true, skipEmptyLines: true,
-        transformHeader: h => h.trim().replace(/^\uFEFF/, '')
-      }).data;
-    }
-    setLoadProgress(80);
+    setLoadMsg('Parsing data…');
+    setLoadProgress(40);
 
-    // ── 3. Normality results from CSV ─────────────────────────
-    setLoadMsg('Loading normality data…');
-    try {
-      const nr = await fetch('data/CK_normality_results.csv');
-      if (nr.ok) {
-        const nText = await nr.text();
-        Papa.parse(nText, {
-          header: true, skipEmptyLines: true,
-          transformHeader: h => h.trim().replace(/^\uFEFF/, '')
-        }).data.forEach(r => {
-          normalityMap[`${r.CATEG_COD}|${r.SUBCAT_COD}`] = r;
-        });
-      }
-    } catch (_) {}
-    setLoadProgress(90);
+    const [pText, nText, sText, dText] = await Promise.all([
+      pRes.text(), nRes.text(), sRes.text(), dRes.text()
+    ]);
 
-    // ── 4. Finalize ───────────────────────────────────────────
-    dataReady = true;
-    setLoadProgress(100);
-
-    const subcatCount = new Set(
-      pipelineData.map(i => `${i.CATEG_COD}|${i.SUBCAT_COD}`)
-    ).size;
-
-    const ts = new Date().toLocaleString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric',
-      hour: 'numeric', minute: '2-digit'
-    });
-    document.getElementById('dash-footer-ts').textContent   = `Data as of ${ts}`;
-    document.getElementById('toolbar-status').textContent   = `${pipelineData.length.toLocaleString()} items loaded`;
-    document.getElementById('welcome-data-msg').textContent =
-      `${pipelineData.length.toLocaleString()} items · ${subcatCount} sub-categories loaded.`;
-
-    hide('loading-screen');
-    document.getElementById('app-content').style.display = 'flex';
-    doSearch('4000');
+    setLoadProgress(60);
+    processData(pText, nText, sText, dText);
 
   } catch (err) {
-    setLoadMsg('❌ Error: ' + err.message);
+    setLoadMsg('❌ ' + err.message);
     const el = document.getElementById('load-msg');
     if (el) el.style.color = '#dc2626';
     console.error(err);
   }
 }
 
-// ── On-demand daily sales fetch (called before rendering an item) ─
+function processData(pText, nText, sText, dText) {
+  setLoadMsg('Parsing data…');
+  setLoadProgress(70);
 
-async function fetchDailySalesForItem(itemNo) {
-  const key = (itemNo || '').trim();
-  if (dailySalesIndex[key]) return; // already cached
+  setTimeout(() => {
+    try {
+      pipelineData = Papa.parse(pText, {
+        header: true, skipEmptyLines: true,
+        transformHeader: h => h.trim().replace(/^\uFEFF/, '')
+      }).data;
 
-  try {
-    // Item 4000 has 90 rows max — always fits in pageSize=200
-    const json = await apiGet(
-      `/api/v1/tables/USER_VI_CK_DailySales/rows?pageSize=200&compact=true&filter=ITEM_NO:eq:${encodeURIComponent(key)}`
-    );
-    const rows = json.data?.data || [];
+      Papa.parse(nText, {
+        header: true, skipEmptyLines: true,
+        transformHeader: h => h.trim().replace(/^\uFEFF/, '')
+      }).data.forEach(r => {
+        normalityMap[`${r.CATEG_COD}|${r.SUBCAT_COD}`] = r;
+      });
 
-    // Normalize API fields to match what getDailySalesForItem expects
-    dailySalesIndex[key] = rows.map(r => ({
-      SALE_DATE:  (r.POST_DATE || '').slice(0, 10),
-      DAILY_QTY:  r.QTY_SOLD ?? 0,
-      DAILY_AMT:  r.EXT_PRC  ?? 0
-    }));
-  } catch (_) {
-    // If fetch fails, store empty array so we don't retry on every render
-    dailySalesIndex[key] = [];
-  }
+      storeData = Papa.parse(sText, {
+        header: true, skipEmptyLines: true,
+        transformHeader: h => h.trim().replace(/^\uFEFF/, '')
+      }).data;
+
+      dailySalesData = Papa.parse(dText, {
+        header: true, skipEmptyLines: true,
+        transformHeader: h => h.trim().replace(/^\uFEFF/, '')
+      }).data;
+
+      // Build daily sales index keyed by ITEM_NO
+      dailySalesIndex = {};
+      dailySalesData.forEach(row => {
+        const key = (row.ITEM_NO || '').trim();
+        if (!dailySalesIndex[key]) dailySalesIndex[key] = [];
+        dailySalesIndex[key].push(row);
+      });
+
+      setLoadProgress(100);
+      dataReady = true;
+
+      const subcatCount = new Set(
+        pipelineData.map(i => `${i.CATEG_COD}|${i.SUBCAT_COD}`)
+      ).size;
+
+      const ts = new Date().toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: 'numeric', minute: '2-digit'
+      });
+      document.getElementById('dash-footer-ts').textContent   = `Data as of ${ts}`;
+      document.getElementById('toolbar-status').textContent   = `${pipelineData.length.toLocaleString()} items loaded`;
+      document.getElementById('welcome-data-msg').textContent =
+        `${pipelineData.length.toLocaleString()} items · ${subcatCount} sub-categories loaded.`;
+
+      hide('loading-screen');
+      document.getElementById('app-content').style.display = 'flex';
+      doSearch('4000');
+
+    } catch (err) {
+      setLoadMsg('❌ Error: ' + err.message);
+      const el = document.getElementById('load-msg');
+      if (el) el.style.color = '#dc2626';
+      console.error(err);
+    }
+  }, 20);
 }
