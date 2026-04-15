@@ -4,7 +4,8 @@
       "Bash(git add:*)",
       "Bash(git commit -m ':*)",
       "Bash(start \"c:\\\\Users\\\\houstonp\\\\desktop\\\\CK-Analytics-DB\\\\index.html\")",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Bash(curl -s -H \"X-Api-Key: 26G3t29ecBtvmGpbKOoVnql34eNYfUoy\" \"http://172.16.20.185:8085/api/v1/analytics/sales/by-item/daily?pageSize=1&compact=true&filter=postDate:gte:2025-01-14\")"
     ]
   }
 }
