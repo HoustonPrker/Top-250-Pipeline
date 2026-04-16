@@ -6,6 +6,131 @@
   <title>CK Analytics</title>
   <link rel="stylesheet" href="css/styles.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <style>
+    /* ── Item search modal ───────────────────────────────────────── */
+    .search-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 10000;
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 80px;
+    }
+    .search-modal-overlay.open { display: flex; }
+    .search-modal {
+      background: #1e293b;
+      border: 1px solid #2d3f55;
+      border-radius: 8px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+      width: 480px;
+      max-width: 92vw;
+      overflow: hidden;
+    }
+    .search-modal-header {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 10px 10px;
+    }
+    .search-modal-input {
+      flex: 1;
+      background: #263347;
+      border: 1px solid #334155;
+      border-right: none;
+      border-radius: 6px 0 0 6px;
+      color: #e2e8f0;
+      font-size: 14px;
+      height: 38px;
+      padding: 0 12px;
+      outline: none;
+    }
+    .search-modal-input::placeholder { color: #64748b; }
+    .search-modal-go {
+      background: #3b82f6;
+      border: 1px solid #3b82f6;
+      border-radius: 0 6px 6px 0;
+      color: #fff;
+      cursor: pointer;
+      font-size: 15px;
+      height: 38px;
+      width: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .search-modal-go:hover { background: #2563eb; }
+    .search-modal-results {
+      max-height: 360px;
+      overflow-y: auto;
+      border-top: 1px solid #263347;
+    }
+    .search-modal-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid #1a2636;
+      transition: background 0.1s;
+    }
+    .search-modal-row:last-child { border-bottom: none; }
+    .search-modal-row:hover { background: #263347; }
+    .search-modal-num {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      color: #93c5fd;
+      white-space: nowrap;
+      min-width: 72px;
+    }
+    .search-modal-name {
+      flex: 1;
+      font-size: 13px;
+      color: #cbd5e1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .search-modal-badge {
+      font-size: 10px;
+      color: #64748b;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      padding: 2px 6px;
+      white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .search-modal-hint {
+      padding: 16px;
+      font-size: 13px;
+      color: #64748b;
+      text-align: center;
+    }
+    /* ── Nav search button ──────────────────────────────────────── */
+    .nav-search-btn {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 16px;
+      height: 32px;
+      width: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 10px;
+      transition: border-color 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+    .nav-search-btn:hover { border-color: #3b82f6; color: #e2e8f0; }
+  </style>
 </head>
 <body>
 
@@ -16,9 +141,9 @@
     <span class="nav-title">CK Analytics</span>
   </div>
   <div class="nav-center">
-    <span class="nav-search-label">Item #:</span>
+    <button class="nav-search-btn" onclick="openSearchModal()" title="Search items">&#128269;</button>
     <input type="text" id="item-search" class="nav-search-input"
-           placeholder="e.g. 4000" maxlength="30" autocomplete="off">
+           placeholder="Item #" maxlength="30" autocomplete="off">
     <button class="btn btn-primary btn-sm" onclick="doSearch()">Search</button>
     <button class="btn btn-ghost btn-sm" onclick="clearView()">Clear</button>
   </div>
@@ -27,6 +152,20 @@
     <button class="btn btn-ghost btn-sm" onclick="loadData()">&#8635; Refresh</button>
   </div>
 </nav>
+
+<!-- ── Item Search Modal ────────────────────────────────────── -->
+<div class="search-modal-overlay" id="search-modal-overlay">
+  <div class="search-modal">
+    <div class="search-modal-header">
+      <input type="text" id="search-modal-input" class="search-modal-input"
+             placeholder="Search items..." autocomplete="off" maxlength="80">
+      <button class="search-modal-go" onclick="searchModalGo()" title="Search">&#128269;</button>
+    </div>
+    <div class="search-modal-results" id="search-modal-results">
+      <div class="search-modal-hint">Type to search items...</div>
+    </div>
+  </div>
+</div>
 
 <!-- ── Tab Bar ─────────────────────────────────────────────── -->
 <div class="tab-bar">
@@ -100,6 +239,16 @@
           <div class="kpi-val" id="k-vel"></div>
           <div class="kpi-sub" id="k-pct"></div>
         </div>
+        <div class="kpi-card kpi-card-sales">
+          <div class="kpi-lbl">Margin %</div>
+          <div class="kpi-val" id="k-margin"></div>
+          <div class="kpi-sub" id="k-margin-sub"></div>
+        </div>
+        <div class="kpi-card kpi-card-sales">
+          <div class="kpi-lbl">90-Day Profit</div>
+          <div class="kpi-val" id="k-profit"></div>
+          <div class="kpi-sub" id="k-profit-sub"></div>
+        </div>
         <div class="kpi-card kpi-card-status">
           <div class="kpi-lbl">Item Status</div>
           <div class="kpi-val" id="k-status"></div>
@@ -143,12 +292,9 @@
             <thead>
               <tr>
                 <th>Store</th>
-                <th class="num">Qty On Hand</th>
-                <th class="num">Qty Available</th>
-                <th class="num">Stores w/ Stock</th>
-                <th class="num">12M Units Sold</th>
-                <th class="num">12M Revenue</th>
-                <th>Status</th>
+                <th class="num-ctr">30D Sales</th>
+                <th class="num-ctr">90D Sales</th>
+                <th class="num-ctr">Status</th>
               </tr>
             </thead>
             <tbody id="inv-body"></tbody>
@@ -176,6 +322,85 @@
   <span id="dash-footer-ts">Loading data...</span>
 </div>
 
+<script>
+  // ── Item search modal ────────────────────────────────────────
+  const _BASE_SEARCH = `${window.location.protocol}//${window.location.hostname}:3001/proxy`;
+  let _searchTimer = null;
+
+  function openSearchModal() {
+    document.getElementById('search-modal-overlay').classList.add('open');
+    const inp = document.getElementById('search-modal-input');
+    inp.value = '';
+    document.getElementById('search-modal-results').innerHTML =
+      '<div class="search-modal-hint">Type to search items...</div>';
+    setTimeout(() => inp.focus(), 50);
+  }
+
+  function closeSearchModal() {
+    document.getElementById('search-modal-overlay').classList.remove('open');
+    clearTimeout(_searchTimer);
+  }
+
+  function searchModalGo() {
+    const first = document.querySelector('.search-modal-row');
+    if (first) first.click();
+  }
+
+  // Close on overlay click (outside the modal box)
+  document.getElementById('search-modal-overlay').addEventListener('click', function(e) {
+    if (e.target === this) closeSearchModal();
+  });
+
+  document.getElementById('search-modal-input').addEventListener('input', function() {
+    clearTimeout(_searchTimer);
+    const q = this.value.trim();
+    const results = document.getElementById('search-modal-results');
+    if (q.length < 2) {
+      results.innerHTML = '<div class="search-modal-hint">Type to search items...</div>';
+      return;
+    }
+    results.innerHTML = '<div class="search-modal-hint">Searching...</div>';
+    _searchTimer = setTimeout(async () => {
+      try {
+        const resp = await fetch(`${_BASE_SEARCH}/items/search?q=${encodeURIComponent(q)}`);
+        const rows = resp.ok ? await resp.json() : [];
+        if (!rows.length) {
+          results.innerHTML = '<div class="search-modal-hint">No results found.</div>';
+          return;
+        }
+        results.innerHTML = '';
+        rows.forEach(r => {
+          const row = document.createElement('div');
+          row.className = 'search-modal-row';
+          row.innerHTML =
+            `<span class="search-modal-num">${r.itemNo}</span>` +
+            `<span class="search-modal-name">${r.name}</span>` +
+            `<span class="search-modal-badge">${r.category}${r.subcat ? ' / ' + r.subcat : ''}</span>`;
+          row.addEventListener('click', () => {
+            closeSearchModal();
+            if (typeof doSearch === 'function') doSearch(r.itemNo);
+          });
+          results.appendChild(row);
+        });
+      } catch (_) {
+        results.innerHTML = '<div class="search-modal-hint">Error fetching results.</div>';
+      }
+    }, 300);
+  });
+
+  document.getElementById('search-modal-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeSearchModal();
+    if (e.key === 'Enter') {
+      const first = document.querySelector('.search-modal-row');
+      if (first) first.click();
+    }
+  });
+
+  // Plain nav search input — Enter key fires doSearch
+  document.getElementById('item-search').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doSearch();
+  });
+</script>
 <script src="js/utils.js"></script>
 <script src="js/math.js"></script>
 <script src="js/data-loader.js"></script>

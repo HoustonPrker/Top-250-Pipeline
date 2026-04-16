@@ -15,11 +15,15 @@ let activeTab       = 'item';
 // ── Tab switching ─────────────────────────────────────────────
 
 function switchTab(tab) {
-  // Destroy all charts from every tab before switching to prevent
-  // "Canvas is already in use" errors from Chart.js
-  destroyCharts();
-  if (typeof destroyCatCharts   === 'function') destroyCatCharts();
-  if (typeof destroyStoreCharts === 'function') destroyStoreCharts();
+  // Only destroy charts for the tab we're leaving, not item charts —
+  // item charts survive tab switches and are recreated only on new searches.
+  if (activeTab === 'category' && typeof destroyCatCharts   === 'function') destroyCatCharts();
+  if (activeTab === 'store'    && typeof destroyStoreCharts === 'function') destroyStoreCharts();
+  // Destroy cat/store charts when entering item tab to free canvas references
+  if (tab === 'item') {
+    if (typeof destroyCatCharts   === 'function') destroyCatCharts();
+    if (typeof destroyStoreCharts === 'function') destroyStoreCharts();
+  }
 
   activeTab = tab;
 

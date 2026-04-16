@@ -96,6 +96,45 @@ function renderItem(item) {
     `<span class="${velClass}" style="font-size:20px;line-height:1">${velArrow}</span>&nbsp;<span class="${velClass}" style="font-size:20px">${velLabel}</span>`;
   document.getElementById('k-pct').textContent = `${pctRecent}% of 12M in last 90 days`;
 
+  // Margin % and 90D Profit — seeded from CSV if available, else fetched live
+  document.getElementById('k-margin').textContent     = '…';
+  document.getElementById('k-margin-sub').textContent = '';
+  document.getElementById('k-profit').textContent     = '…';
+  document.getElementById('k-profit-sub').textContent = '';
+
+  (async () => {
+    let price    = parseFloat(item.PRICE)     || 0;
+    let lastCost = parseFloat(item.LAST_COST) || 0;
+
+    // CSV doesn't have price yet — fetch live from API
+    if (!price) {
+      try {
+        const BASE = `${window.location.protocol}//${window.location.hostname}:3001/proxy`;
+        const resp = await fetch(`${BASE}/item/${encodeURIComponent(item.ITEM_NO)}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          const d    = data.data || data;
+          price    = parseFloat(d.price1   || d.PRICE)    || 0;
+          lastCost = parseFloat(d.lastCost || d.LAST_COST) || 0;
+        }
+      } catch (_) {}
+    }
+
+    const rev90     = parseFloat(item.RAW_AMT_90D) || 0;
+    const marginPct = price > 0 ? (price - lastCost) / price : null;
+    const profit90  = marginPct != null ? rev90 * marginPct : null;
+
+    if (marginPct != null) {
+      document.getElementById('k-margin').textContent     = `${(marginPct * 100).toFixed(1)}%`;
+      document.getElementById('k-margin-sub').textContent = `${fmt$(price)} sell · ${fmt$(lastCost)} cost`;
+    } else {
+      document.getElementById('k-margin').textContent     = '—';
+      document.getElementById('k-margin-sub').textContent = 'No price data';
+    }
+    document.getElementById('k-profit').textContent     = profit90 != null ? fmt$(profit90) : '—';
+    document.getElementById('k-profit-sub').textContent = profit90 != null ? `on ${fmt$(rev90)} revenue` : '';
+  })();
+
   // Status
   const status = (item.STATUS || '').trim().toUpperCase();
   const stsCls = status === 'ACTIVE' ? 'sts-active' : status === 'OUT OF STOCK' ? 'sts-oos' : 'sts-ns';
@@ -132,14 +171,43 @@ function renderItem(item) {
   aggRow.className = 'agg-row';
   aggRow.innerHTML = `
     <td>ALL STORES (Aggregate)</td>
-    <td class="num">${fmtQty(qtyOH)}</td>
-    <td class="num">${fmtQty(qtyAv)}</td>
-    <td class="num">${stksN}</td>
-    <td class="num">${fmtQty(q12m)}</td>
-    <td class="num">${fmt$(a12m)}</td>
-    <td>${item.STATUS || '—'}</td>`;
+    <td class="num-ctr" style="color:#000">${fmtQty(qty30)}<br><span style="font-size:11px;color:#6b7280">${fmt$(amt30)}</span></td>
+    <td class="num-ctr" style="color:#000">${fmtQty(qty90)}<br><span style="font-size:11px;color:#6b7280">${fmt$(amt90)}</span></td>
+    <td class="num-ctr">${item.STATUS || '—'}</td>`;
 
-  const noteRow = tbody.insertRow();
-  noteRow.className = 'note-row';
-  noteRow.innerHTML = `<td colspan="7" style="cursor:default">Per-store breakdown coming soon</td>`;
+  // Loading placeholder while store sales fetch
+  const loadRow = tbody.insertRow();
+  loadRow.innerHTML = `<td colspan="4" style="color:#9ca3af;font-size:12px;padding:10px 12px">Loading per-store sales...</td>`;
+
+  // Fetch per-store 30D/90D sales from proxy
+  const BASE = `${window.location.protocol}//${window.location.hostname}:3001/proxy`;
+  fetch(`${BASE}/item/${encodeURIComponent(item.ITEM_NO)}/store-sales`)
+    .then(r => r.ok ? r.json() : [])
+    .then(storeSales => {
+      loadRow.remove();
+      if (!storeSales.length) {
+        const nr = tbody.insertRow();
+        nr.innerHTML = `<td colspan="4" style="color:#9ca3af;font-size:12px;padding:10px 12px">No per-store sales data in the last 90 days.</td>`;
+        return;
+      }
+      // Build store name lookup from storeData global
+      const storeNames = {};
+      (storeData || []).forEach(s => {
+        const id = String(s.STR_ID || s.strId || '').trim();
+        storeNames[id] = s.STR_NAM || s.STORE_NAME || s.storeName || s.descr || id;
+      });
+
+      storeSales.forEach(s => {
+        const name = storeNames[s.storeId] || '';
+        const row  = tbody.insertRow();
+        row.innerHTML = `
+          <td><span style="font-family:monospace;font-weight:700;color:#3d5a80;margin-right:6px">#${s.storeId}</span>${name}</td>
+          <td class="num-ctr" style="color:#000">${fmtQty(s.qty30)}<br><span style="font-size:11px;color:#6b7280">${fmt$(s.amt30)}</span></td>
+          <td class="num-ctr" style="color:#000">${fmtQty(s.qty90)}<br><span style="font-size:11px;color:#6b7280">${fmt$(s.amt90)}</span></td>
+          <td class="num-ctr">—</td>`;
+      });
+    })
+    .catch(() => {
+      loadRow.innerHTML = `<td colspan="4" style="color:#9ca3af;font-size:12px;padding:10px 12px">Could not load per-store sales.</td>`;
+    });
 }

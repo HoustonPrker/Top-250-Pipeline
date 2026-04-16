@@ -1,44 +1,10 @@
 // ============================================================
-// DATA LOADER — CSV files (written nightly by scripts/export_data.py)
-// Populates globals: pipelineData, normalityMap, storeData,
-//                    dailySalesData, dailySalesIndex (declared in app.js)
+// DATA LOADER — Proxy API (replaces CSV fetch)
+// All data comes from the local proxy server at localhost:3001
+// Start with: node proxy.js
 // ============================================================
 
-// Minimal CSV parser (handles quotes, commas in values, BOM)
-var Papa = {
-  parse: function(text, opts) {
-    text = text.replace(/^\uFEFF/, '');
-    var lines = text.split(/\r?\n/);
-    var headers = null;
-    var data = [];
-    var transformHeader = (opts && opts.transformHeader) || function(h) { return h; };
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      if (!line.trim()) { if (opts && opts.skipEmptyLines) continue; }
-      var row = Papa._parseRow(line);
-      if (!headers) { headers = row.map(transformHeader); }
-      else {
-        var obj = {};
-        for (var j = 0; j < headers.length; j++) obj[headers[j]] = row[j] !== undefined ? row[j] : '';
-        data.push(obj);
-      }
-    }
-    return { data: data };
-  },
-  _parseRow: function(line) {
-    var result = [], cur = '', inQ = false;
-    for (var i = 0; i < line.length; i++) {
-      var c = line[i];
-      if (c === '"') {
-        if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
-        else inQ = !inQ;
-      } else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
-      else cur += c;
-    }
-    result.push(cur);
-    return result;
-  }
-};
+const BASE = `${window.location.protocol}//${window.location.hostname}:3001/proxy`;
 
 // ── Progress UI helpers ───────────────────────────────────────
 
@@ -52,106 +18,161 @@ function setLoadProgress(pct) {
   if (bar) bar.style.width = Math.min(100, Math.round(pct)) + '%';
 }
 
-// ── Main load ─────────────────────────────────────────────────
+// ── Boot loader — populates all global state ──────────────────
+// Keeps the same globals (pipelineData, storeData, dailySalesIndex, normalityMap)
+// so all view files work without changes.
 
 async function loadData() {
   hide('file-picker');
   show('loading-screen');
-  setLoadMsg('Fetching CSV files…');
+  setLoadMsg('Connecting to proxy...');
   setLoadProgress(0);
 
   try {
-    const [pRes, nRes, sRes, dRes] = await Promise.all([
-      fetch('data/CK_math_pipeline_data.csv'),
-      fetch('data/CK_normality_results.csv'),
-      fetch('data/CK_store_data.csv'),
-      fetch('data/CK_daily_sales.csv'),
+    // Fetch rankings, store data, and daily sales in parallel
+    setLoadMsg('Loading data from proxy...');
+    const [rankingsResp, storeDataResp, dailySalesResp] = await Promise.all([
+      fetch(`${BASE}/rankings`),
+      fetch(`${BASE}/store-data`),
+      fetch(`${BASE}/daily-sales`),
     ]);
 
-    if (!pRes.ok) throw new Error('Could not load CK_math_pipeline_data.csv');
-    if (!nRes.ok) throw new Error('Could not load CK_normality_results.csv');
-    if (!sRes.ok) throw new Error('Could not load CK_store_data.csv');
-    if (!dRes.ok) throw new Error('Could not load CK_daily_sales.csv');
+    if (!rankingsResp.ok) throw new Error('Could not load rankings from proxy. Is node proxy.js running?');
+    if (!storeDataResp.ok) throw new Error('Could not load store data from proxy.');
 
-    setLoadMsg('Parsing data…');
     setLoadProgress(40);
 
-    const [pText, nText, sText, dText] = await Promise.all([
-      pRes.text(), nRes.text(), sRes.text(), dRes.text()
+    const [rankingsRaw, storeDataRaw, dailySalesRaw] = await Promise.all([
+      rankingsResp.json(),
+      storeDataResp.json(),
+      dailySalesResp.ok ? dailySalesResp.json() : Promise.resolve([]),
     ]);
 
-    setLoadProgress(60);
-    processData(pText, nText, sText, dText);
+    setLoadProgress(70);
+
+    // Populate pipelineData — used by item-zoom and category views
+    pipelineData = rankingsRaw.map(r => ({
+      ITEM_NO:               (r.ITEM_NO || '').trim(),
+      ITEM_NAME:             r.DESCR          || r.ITEM_NAME     || '',
+      CATEG_COD:             r.CATEG_COD      || r.CATEGORY      || '',
+      SUBCAT_COD:            r.SUBCAT_COD     || r.SUBCAT        || '',
+      RAW_QTY_90D:           r.RAW_QTY_90D    || r.SALES_90D     || 0,
+      RAW_AMT_90D:           r.RAW_AMT_90D    || r.REV_90D       || 0,
+      RAW_QTY_12M_TOTAL:     r.RAW_QTY_12M_TOTAL || r.SALES_90D  || 0,
+      RAW_AMT_12M_TOTAL:     r.RAW_AMT_12M_TOTAL || r.REV_90D    || 0,
+      PCT_RECENT:            r.PCT_RECENT     || 0,
+      SUBCAT_RANK:           r.SUBCAT_RANK    || 0,
+      SUBCAT_TOTAL:          r.SUBCAT_TOTAL   || 0,
+      PEER_COUNT:            r.PEER_COUNT     || r.SUBCAT_TOTAL  || 0,
+      PERCENTILE:            r.PERCENTILE     || 0,
+      RANK_METHOD:           r.RANK_METHOD    || '',
+      STATUS:                r.STATUS         || '',
+      QTY_AVAIL_ALL_STORES:  r.QTY_AVAIL_ALL_STORES  || 0,
+      QTY_ON_HND_ALL_STORES: r.QTY_ON_HND_ALL_STORES || 0,
+      STORES_WITH_STOCK:     r.STORES_WITH_STOCK      || 0,
+      PRICE:                 r.PRICE      || r.price1    || null,
+      LAST_COST:             r.LAST_COST  || r.lastCost  || null,
+      MARGIN_PCT:            r.MARGIN_PCT || null,
+    }));
+
+    // Populate normalityMap — keyed by "CATEG|SUBCAT", used by computePercentile()
+    normalityMap = {};
+    rankingsRaw.forEach(r => {
+      const cat    = r.CATEG_COD  || r.CATEGORY || '';
+      const subcat = r.SUBCAT_COD || r.SUBCAT   || '';
+      const key    = `${cat}|${subcat}`;
+      if (!normalityMap[key]) {
+        normalityMap[key] = { CATEG_COD: cat, SUBCAT_COD: subcat, RANK_METHOD: r.RANK_METHOD || '' };
+      }
+    });
+
+    // Populate storeData — used by store view (legacy CSV with tier/revenue fields)
+    storeData = storeDataRaw;
+
+    // Build dailySalesIndex keyed by ITEM_NO — used by getDailySalesForItem() in utils.js
+    dailySalesIndex = {};
+    dailySalesData  = dailySalesRaw;
+    dailySalesRaw.forEach(row => {
+      const key = (row.ITEM_NO || '').trim();
+      if (!dailySalesIndex[key]) dailySalesIndex[key] = [];
+      dailySalesIndex[key].push(row);
+    });
+
+    setLoadProgress(100);
+    dataReady = true;
+
+    const subcatCount = new Set(
+      pipelineData.map(i => `${i.CATEG_COD}|${i.SUBCAT_COD}`)
+    ).size;
+
+    const ts = new Date().toLocaleString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit'
+    });
+    document.getElementById('dash-footer-ts').textContent   = `Data as of ${ts}`;
+    document.getElementById('toolbar-status').textContent   = `${pipelineData.length.toLocaleString()} items loaded`;
+    document.getElementById('welcome-data-msg').textContent =
+      `${pipelineData.length.toLocaleString()} items · ${subcatCount} sub-categories loaded.`;
+
+    hide('loading-screen');
+    document.getElementById('app-content').style.display = 'flex';
+    doSearch('4000');
 
   } catch (err) {
-    setLoadMsg('❌ ' + err.message);
+    setLoadMsg('Error: ' + err.message);
     const el = document.getElementById('load-msg');
     if (el) el.style.color = '#dc2626';
     console.error(err);
   }
 }
 
-function processData(pText, nText, sText, dText) {
-  setLoadMsg('Parsing data…');
-  setLoadProgress(70);
+// ── Item Zoom data (per search, augments live API data) ───────
+// Called optionally to get live inventory; daily sales already loaded at boot.
 
-  setTimeout(() => {
-    try {
-      pipelineData = Papa.parse(pText, {
-        header: true, skipEmptyLines: true,
-        transformHeader: h => h.trim().replace(/^\uFEFF/, '')
-      }).data;
+async function loadItemData(itemNo) {
+  const enc = encodeURIComponent((itemNo || '').trim());
+  const [itemResp, invResp] = await Promise.all([
+    fetch(`${BASE}/item/${enc}`),
+    fetch(`${BASE}/item/${enc}/inventory`),
+  ]);
 
-      Papa.parse(nText, {
-        header: true, skipEmptyLines: true,
-        transformHeader: h => h.trim().replace(/^\uFEFF/, '')
-      }).data.forEach(r => {
-        normalityMap[`${r.CATEG_COD}|${r.SUBCAT_COD}`] = r;
-      });
+  const item      = itemResp.ok ? await itemResp.json() : {};
+  const inventory = invResp.ok  ? await invResp.json()  : [];
 
-      storeData = Papa.parse(sText, {
-        header: true, skipEmptyLines: true,
-        transformHeader: h => h.trim().replace(/^\uFEFF/, '')
-      }).data;
+  const itemData = item.data || item;
+  const inv      = Array.isArray(inventory) ? inventory : (inventory.data || []);
 
-      dailySalesData = Papa.parse(dText, {
-        header: true, skipEmptyLines: true,
-        transformHeader: h => h.trim().replace(/^\uFEFF/, '')
-      }).data;
+  const qtyAvail        = inv.reduce((s, r) => s + (parseFloat(r.qtyAvailable || r.QTY_AVAILABLE) || 0), 0);
+  const qtyOH           = inv.reduce((s, r) => s + (parseFloat(r.qtyOnHand    || r.QTY_ON_HAND)   || 0), 0);
+  const storesWithStock = inv.filter(r => (parseFloat(r.qtyAvailable || r.QTY_AVAILABLE) || 0) > 0).length;
 
-      // Build daily sales index keyed by ITEM_NO
-      dailySalesIndex = {};
-      dailySalesData.forEach(row => {
-        const key = (row.ITEM_NO || '').trim();
-        if (!dailySalesIndex[key]) dailySalesIndex[key] = [];
-        dailySalesIndex[key].push(row);
-      });
+  return {
+    QTY_AVAIL_ALL_STORES:  qtyAvail,
+    QTY_ON_HND_ALL_STORES: qtyOH,
+    STORES_WITH_STOCK:     storesWithStock,
+    PRICE:                 itemData.price1   || 0,
+    LAST_COST:             itemData.lastCost || 0,
+  };
+}
 
-      setLoadProgress(100);
-      dataReady = true;
+// ── All rankings ──────────────────────────────────────────────
+async function loadAllRankings() {
+  const r = await fetch(`${BASE}/rankings`);
+  if (!r.ok) return [];
+  return r.json();
+}
 
-      const subcatCount = new Set(
-        pipelineData.map(i => `${i.CATEG_COD}|${i.SUBCAT_COD}`)
-      ).size;
+// ── Stores ────────────────────────────────────────────────────
+async function loadStores() {
+  const r = await fetch(`${BASE}/stores`);
+  if (!r.ok) return [];
+  return r.json();
+}
 
-      const ts = new Date().toLocaleString('en-US', {
-        month: 'short', day: 'numeric', year: 'numeric',
-        hour: 'numeric', minute: '2-digit'
-      });
-      document.getElementById('dash-footer-ts').textContent   = `Data as of ${ts}`;
-      document.getElementById('toolbar-status').textContent   = `${pipelineData.length.toLocaleString()} items loaded`;
-      document.getElementById('welcome-data-msg').textContent =
-        `${pipelineData.length.toLocaleString()} items · ${subcatCount} sub-categories loaded.`;
-
-      hide('loading-screen');
-      document.getElementById('app-content').style.display = 'flex';
-      doSearch('4000');
-
-    } catch (err) {
-      setLoadMsg('❌ Error: ' + err.message);
-      const el = document.getElementById('load-msg');
-      if (el) el.style.color = '#dc2626';
-      console.error(err);
-    }
-  }, 20);
+// ── Browse/search items ───────────────────────────────────────
+async function browseItems(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const r  = await fetch(`${BASE}/items?${qs}`);
+  if (!r.ok) return { data: [] };
+  return r.json();
 }

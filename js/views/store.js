@@ -1,6 +1,6 @@
 // ============================================================
 // STORE PERFORMANCE VIEW
-// Uses globals: storeData, dataReady
+// Uses globals: storeData, pipelineData, dataReady
 // ============================================================
 
 let storeSortCol = 'annual', storeSortDir = 'desc';
@@ -12,7 +12,8 @@ function destroyStoreCharts() {
   storeViewCharts = {};
 }
 
-const TIER_COLORS = { HIGH: '#16a34a', MEDIUM: '#3d5a80', LOW: '#6b7280' };
+// Fix 1 — steel blue palette, no green in charts
+const TIER_COLORS = { HIGH: '#3d5a80', MEDIUM: '#6b8eb5', LOW: '#93b4d4' };
 const TIER_DIM    = '#d1d5db';
 
 const storeTooltipDefaults = {
@@ -71,18 +72,19 @@ function renderStoreOverview() {
     }
   });
 
+  // Fix 2 — Velocity column header clarification
   const cols = [
-    { key: 'storeno', label: 'Store #',       cls: 'num-ctr' },
+    { key: 'storeno', label: 'Store #',           cls: 'num-ctr' },
     { key: 'store',   label: 'Store Name' },
     { key: 'city',    label: 'City' },
-    { key: 'state',   label: 'State',         cls: 'num-ctr' },
-    { key: 'tier',    label: 'Tier',           cls: 'num-ctr' },
-    { key: 'annual',  label: 'Annual Revenue', cls: 'num-ctr' },
-    { key: 'qty90',   label: '90D Qty',        cls: 'num-ctr' },
-    { key: 'amt90',   label: '90D Revenue',    cls: 'num-ctr' },
-    { key: 'vel',     label: 'Velocity',       cls: 'num-ctr' },
-    { key: 'txn',     label: 'Txns (90D)',     cls: 'num-ctr' },
-    { key: 'stocked', label: 'Items Stocked',  cls: 'num-ctr' },
+    { key: 'state',   label: 'State',             cls: 'num-ctr' },
+    { key: 'tier',    label: 'Tier',               cls: 'num-ctr' },
+    { key: 'annual',  label: 'Annual Revenue',     cls: 'num-ctr' },
+    { key: 'qty90',   label: '90D Qty',            cls: 'num-ctr' },
+    { key: 'amt90',   label: '90D Revenue',        cls: 'num-ctr' },
+    { key: 'vel',     label: 'Velocity (% of 12M)',cls: 'num-ctr' },
+    { key: 'txn',     label: 'Txns (90D)',         cls: 'num-ctr' },
+    { key: 'stocked', label: 'Items Stocked',      cls: 'num-ctr' },
   ];
 
   const thead = cols.map(c => {
@@ -162,12 +164,13 @@ function renderStoreOverview() {
 }
 
 function renderStoreCharts() {
-  const filter  = storeTierFilter;
-  const top15   = [...storeData].sort((a, b) => (parseFloat(b.AMT_90D) || 0) - (parseFloat(a.AMT_90D) || 0)).slice(0, 15);
-  const maxQty  = Math.max(...storeData.map(s => parseFloat(s.QTY_90D) || 0)) || 1;
+  const filter = storeTierFilter;
+  const top15  = [...storeData].sort((a, b) => (parseFloat(b.AMT_90D) || 0) - (parseFloat(a.AMT_90D) || 0)).slice(0, 15);
+  const maxQty = Math.max(...storeData.map(s => parseFloat(s.QTY_90D) || 0)) || 1;
 
+  // Fix 1 — bar colors: steel blue by tier, dimmed if filtered out
   const barColors = top15.map(s =>
-    filter === 'ALL' || s.STORE_TIER === filter ? TIER_COLORS[s.STORE_TIER] || '#6b7280' : TIER_DIM
+    filter === 'ALL' || s.STORE_TIER === filter ? TIER_COLORS[s.STORE_TIER] || '#6b8eb5' : TIER_DIM
   );
 
   // ── Bar chart: top 15 stores ──────────────────────────────────
@@ -193,10 +196,7 @@ function renderStoreCharts() {
           tooltip: {
             ...storeTooltipDefaults,
             callbacks: {
-              title: ctx => {
-                const s = top15[ctx[0].dataIndex];
-                return s ? s.STORE_NAME : '';
-              },
+              title: ctx => { const s = top15[ctx[0].dataIndex]; return s ? s.STORE_NAME : ''; },
               label: ctx => ` 90D Revenue: ${fmt$(ctx.parsed.x)}`
             }
           }
@@ -215,11 +215,11 @@ function renderStoreCharts() {
     });
   }
 
-  // ── Doughnut: revenue by tier ─────────────────────────────────
+  // ── Doughnut: revenue by tier — Fix 1 steel blue palette ─────
   const donutCtx = document.getElementById('store-donut-chart');
   if (donutCtx) {
-    const tiers     = ['HIGH', 'MEDIUM', 'LOW'];
-    const tierRevs  = tiers.map(t => storeData.filter(s => s.STORE_TIER === t).reduce((sum, s) => sum + (parseFloat(s.AMT_90D) || 0), 0));
+    const tiers      = ['HIGH', 'MEDIUM', 'LOW'];
+    const tierRevs   = tiers.map(t => storeData.filter(s => s.STORE_TIER === t).reduce((sum, s) => sum + (parseFloat(s.AMT_90D) || 0), 0));
     const tierPalette = tiers.map(t => TIER_COLORS[t]);
 
     storeViewCharts.donut = new Chart(donutCtx.getContext('2d'), {
@@ -239,14 +239,8 @@ function renderStoreCharts() {
         cutout: '55%',
         plugins: {
           legend: {
-            display: true,
-            position: 'bottom',
-            labels: {
-              font: { size: 11, family: 'Inter, sans-serif' },
-              color: '#374151',
-              boxWidth: 12,
-              padding: 10
-            }
+            display: true, position: 'bottom',
+            labels: { font: { size: 11, family: 'Inter, sans-serif' }, color: '#374151', boxWidth: 12, padding: 10 }
           },
           tooltip: {
             ...storeTooltipDefaults,
@@ -262,7 +256,7 @@ function renderStoreCharts() {
     });
   }
 
-  // ── Bubble/scatter: annual revenue vs velocity ────────────────
+  // ── Scatter: annual revenue vs velocity — Fix 1 steel blue ───
   const scatterCtx = document.getElementById('store-scatter-chart');
   if (scatterCtx) {
     const datasets = ['HIGH', 'MEDIUM', 'LOW'].map(tier => ({
@@ -274,12 +268,8 @@ function renderStoreCharts() {
         storeName: s.STORE_NAME,
         storeId: s.STR_ID
       })),
-      backgroundColor: filter === 'ALL' || filter === tier
-        ? TIER_COLORS[tier] + 'cc'
-        : TIER_DIM + '66',
-      borderColor: filter === 'ALL' || filter === tier
-        ? TIER_COLORS[tier]
-        : TIER_DIM,
+      backgroundColor: (filter === 'ALL' || filter === tier) ? TIER_COLORS[tier] + 'cc' : TIER_DIM + '66',
+      borderColor:     (filter === 'ALL' || filter === tier) ? TIER_COLORS[tier]        : TIER_DIM,
       borderWidth: 1
     }));
 
@@ -291,8 +281,7 @@ function renderStoreCharts() {
         maintainAspectRatio: false,
         plugins: {
           legend: {
-            display: true,
-            position: 'bottom',
+            display: true, position: 'bottom',
             labels: { font: { size: 11, family: 'Inter, sans-serif' }, color: '#374151', boxWidth: 12, padding: 10 }
           },
           tooltip: {
@@ -355,20 +344,75 @@ function renderStoreDetail(s) {
   const velArr = vel >= 30 ? '↑' : vel < 20 ? '↓' : '→';
   const tier   = (s.STORE_TIER || '').toUpperCase();
 
+  // Fix 3 — tier average for vs-tier pill
+  const tierStores  = storeData.filter(st => st.STORE_TIER === tier);
+  const tierAvg90   = tierStores.reduce((sum, st) => sum + (parseFloat(st.AMT_90D) || 0), 0) / (tierStores.length || 1);
+  const thisAmt90   = parseFloat(s.AMT_90D) || 0;
+  const vsTierDiff  = thisAmt90 - tierAvg90;
+  const vsTierCls   = vsTierDiff >= 0 ? 'vel-up' : 'vel-down';
+  const vsTierArrow = vsTierDiff >= 0 ? '↑' : '↓';
+  const vsTierStr   = `${vsTierArrow} ${fmt$(Math.abs(vsTierDiff))} ${vsTierDiff >= 0 ? 'above' : 'below'} tier avg`;
+
+  // Fix 4 — Basket Size and Tier Rank
+  const txn90      = parseFloat(s.TXN_90D) || 0;
+  const basketSize = txn90 > 0 ? thisAmt90 / txn90 : null;
+
+  const tierByRev  = [...tierStores].sort((a, b) => (parseFloat(b.AMT_90D) || 0) - (parseFloat(a.AMT_90D) || 0));
+  const tierRank   = tierByRev.findIndex(st => String(st.STR_ID).trim() === String(s.STR_ID).trim()) + 1;
+
   const metrics = [
     { label: 'Qty On Hand',        val: fmtQty(s.QTY_ON_HND) },
     { label: 'Qty Available',      val: fmtQty(s.QTY_AVAIL) },
     { label: 'Items Stocked',      val: parseInt(s.ITEMS_STOCKED || 0).toLocaleString() },
     { label: 'Unique Items (90D)', val: parseInt(s.UNIQUE_ITEMS_90D || 0).toLocaleString() },
     { label: 'Categories Sold',    val: s.CATEGORIES_SOLD || '—' },
-    { label: 'Transactions (90D)', val: parseInt(s.TXN_90D || 0).toLocaleString() },
+    { label: 'Transactions (90D)', val: txn90 > 0 ? txn90.toLocaleString() : '—' },
+    { label: 'Basket Size (90D)',  val: basketSize != null ? fmt$(basketSize) : '—', sub: 'avg per transaction' },
+    { label: 'Tier Rank',         val: tierRank > 0 ? `#${tierRank} of ${tierStores.length}` : '—', sub: `among ${tier.charAt(0) + tier.slice(1).toLowerCase()} stores` },
   ];
 
   const metricCards = metrics.map(m => `
     <div class="kpi-card">
       <div class="kpi-lbl">${m.label}</div>
-      <div class="kpi-val" style="font-size:24px">${m.val}</div>
+      <div class="kpi-val" style="font-size:22px">${m.val}</div>
+      ${m.sub ? `<div class="kpi-sub">${m.sub}</div>` : ''}
     </div>`).join('');
+
+  // Fix 5 — Category breakdown from pipelineData
+  const catMap = {};
+  (pipelineData || []).forEach(item => {
+    const cat = item.CATEG_COD || '—';
+    if (!catMap[cat]) catMap[cat] = { cat, items: 0, qty: 0, rev: 0 };
+    catMap[cat].items += 1;
+    catMap[cat].qty   += parseFloat(item.RAW_QTY_90D) || 0;
+    catMap[cat].rev   += parseFloat(item.RAW_AMT_90D) || 0;
+  });
+  const catRows = Object.values(catMap).sort((a, b) => b.rev - a.rev);
+  const totalRev = catRows.reduce((s, r) => s + r.rev, 0);
+  const totalQty = catRows.reduce((s, r) => s + r.qty, 0);
+  const totalItems = catRows.reduce((s, r) => s + r.items, 0);
+
+  const catTbody = catRows.map(r => {
+    const avgUnit = r.qty > 0 ? r.rev / r.qty : 0;
+    const pct     = totalRev > 0 ? (r.rev / totalRev * 100).toFixed(1) : '0.0';
+    return `<tr>
+      <td><strong>${r.cat}</strong></td>
+      <td class="num-ctr">${r.items.toLocaleString()}</td>
+      <td class="num-ctr">${Math.round(r.qty).toLocaleString()}</td>
+      <td class="num-ctr">${fmt$(r.rev)}</td>
+      <td class="num-ctr">${pct}%</td>
+      <td class="num-ctr">${fmt$(avgUnit)}</td>
+    </tr>`;
+  }).join('');
+
+  const catTotalRow = `<tr style="font-weight:700;background:#eef2f7">
+    <td>TOTAL</td>
+    <td class="num-ctr">${totalItems.toLocaleString()}</td>
+    <td class="num-ctr">${Math.round(totalQty).toLocaleString()}</td>
+    <td class="num-ctr">${fmt$(totalRev)}</td>
+    <td class="num-ctr">100%</td>
+    <td class="num-ctr">—</td>
+  </tr>`;
 
   document.getElementById('store-view-content').innerHTML = `
     <div class="cat-nav-breadcrumb">
@@ -376,53 +420,135 @@ function renderStoreDetail(s) {
       <span style="color:#9ca3af;margin:0 8px">/</span>
       <span style="color:#1a2332;font-weight:600">${cleanStoreName}</span>
     </div>
-    <div class="item-header-card">
-      <div class="hdr-row1">
-        <div class="hdr-name">${cleanStoreName}</div>
+
+    <!-- Fix 3 — horizontal pill header -->
+    <div class="item-header-card" style="padding:16px 20px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div class="hdr-name" style="font-size:22px;margin-right:8px">${cleanStoreName}</div>
         <span class="hdr-badge">#${s.STR_ID}</span>
         <span class="tier-badge tier-${tier.toLowerCase()}" style="font-size:13px;padding:4px 12px">${tier}</span>
       </div>
-      <div class="hdr-row2">
-        <div class="hdr-field"><span class="hdr-lbl">City</span><span class="hdr-val">${s.CITY || '—'}</span></div>
-        <div class="hdr-field"><span class="hdr-lbl">State</span><span class="hdr-val">${s.STATE || '—'}</span></div>
-        <div class="hdr-field"><span class="hdr-lbl">Annual Revenue</span><span class="hdr-val">${fmt$(parseFloat(s.ANNUAL_REVENUE) || 0)}</span></div>
-        <div class="hdr-field"><span class="hdr-lbl">90D Revenue</span><span class="hdr-val">${fmt$(parseFloat(s.AMT_90D) || 0)}</span></div>
-        <div class="hdr-field"><span class="hdr-lbl">Velocity</span><span class="hdr-val ${velCls}">${velArr} ${vel.toFixed(1)}%</span></div>
+      <div class="hdr-meta-row" style="margin-top:10px">
+        <span class="hdr-pill"><span class="hdr-lbl">City · State</span><span class="hdr-val">${s.CITY || '—'} · ${s.STATE || '—'}</span></span>
+        <span class="hdr-pill"><span class="hdr-lbl">Annual Rev</span><span class="hdr-val">${fmt$(parseFloat(s.ANNUAL_REVENUE) || 0)}</span></span>
+        <span class="hdr-pill"><span class="hdr-lbl">90D Rev</span><span class="hdr-val">${fmt$(thisAmt90)}</span></span>
+        <span class="hdr-pill"><span class="hdr-lbl">Velocity</span><span class="hdr-val ${velCls}">${velArr} ${vel.toFixed(1)}% of 12M</span></span>
+        <span class="hdr-pill"><span class="hdr-lbl">vs Tier Avg</span><span class="hdr-val ${vsTierCls}">${vsTierStr}</span></span>
       </div>
     </div>
-    <div class="kpi-row">${metricCards}</div>
-    <div class="chart-panel" style="margin-top:16px;margin-bottom:16px">
-      <div class="chart-panel-title">90D Revenue vs Tier Average</div>
-      <div class="chart-container" style="height:180px"><canvas id="store-compare-chart"></canvas></div>
+
+    <!-- Fix 4 — 8-card KPI strip -->
+    <div class="kpi-row" style="grid-template-columns:repeat(8,1fr)">${metricCards}</div>
+
+    <div class="chart-row-3" style="grid-template-columns:1fr 1fr;margin-top:16px;margin-bottom:16px">
+      <div class="chart-panel">
+        <div class="chart-panel-title">Revenue by Category</div>
+        <div class="chart-container" style="height:260px"><canvas id="store-cat-pie-chart"></canvas></div>
+      </div>
+      <div class="chart-panel">
+        <div class="chart-panel-title">90D Revenue</div>
+        <div class="chart-container" style="height:260px"><canvas id="store-compare-chart"></canvas></div>
+      </div>
     </div>
-    <div class="card" style="margin-top:0">
+
+    <!-- Fix 5 — Category breakdown from pipelineData -->
+    <div class="card" style="margin-top:0;margin-bottom:16px">
       <div class="card-title">Category Breakdown</div>
-      <div style="padding:16px;color:#6b7280;font-size:14px">
-        ℹ Per-store category breakdown requires the store_detail.sql query (not yet available in POC dataset).
-        The metrics above are aggregated from CK_store_data.csv.
+      <p style="font-style:italic;font-size:12px;color:#9ca3af;padding:0 0 12px 0">
+        Category data shown is Cloverkey-wide. Per-store category breakdown available after inventory endpoint is restored.
+      </p>
+      <div class="inv-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th class="num-ctr">Items</th>
+              <th class="num-ctr">90D Units</th>
+              <th class="num-ctr">90D Revenue</th>
+              <th class="num-ctr">% of Total</th>
+              <th class="num-ctr">Avg Unit Price</th>
+            </tr>
+          </thead>
+          <tbody>${catTbody}${catTotalRow}</tbody>
+        </table>
       </div>
     </div>`;
 
-  setTimeout(() => renderStoreDetailChart(s, tier), 0);
+  setTimeout(() => {
+    renderStoreDetailChart(s, tier, tierAvg90);
+    renderStoreCatPieChart(catRows, totalRev);
+  }, 0);
 }
 
-function renderStoreDetailChart(s, tier) {
+function renderStoreCatPieChart(catRows, totalRev) {
+  const ctx = document.getElementById('store-cat-pie-chart');
+  if (!ctx) return;
+
+  // Up to 8 categories, rest collapsed into "Other"
+  const PIE_COLORS = [
+    '#3d5a80', // steel blue
+    '#e07b39', // orange
+    '#4caf7d', // green
+    '#e8c53a', // yellow
+    '#9b59b6', // purple
+    '#e74c3c', // red
+    '#17a2b8', // teal
+    '#f06292', // pink
+    '#8d6e63', // brown
+  ];
+
+  const top    = catRows.slice(0, 8);
+  const other  = catRows.slice(8).reduce((s, r) => s + r.rev, 0);
+  const labels = top.map(r => r.cat);
+  const data   = top.map(r => r.rev);
+  if (other > 0) { labels.push('Other'); data.push(other); }
+  const colors = labels.map((_, i) => PIE_COLORS[i % PIE_COLORS.length]);
+
+  storeViewCharts.catPie = new Chart(ctx.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: colors, borderColor: '#fff', borderWidth: 2 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '55%',
+      plugins: {
+        legend: {
+          display: true,
+          position: 'right',
+          labels: { font: { size: 11, family: 'Inter, sans-serif' }, color: '#374151', boxWidth: 12, padding: 8 }
+        },
+        tooltip: {
+          ...storeTooltipDefaults,
+          callbacks: {
+            label: ctx => {
+              const pct = totalRev > 0 ? ((ctx.parsed / totalRev) * 100).toFixed(1) : '0.0';
+              return ` ${fmt$(ctx.parsed)} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderStoreDetailChart(s, tier, tierAvg) {
   const ctx = document.getElementById('store-compare-chart');
   if (!ctx) return;
 
-  const tierStores = storeData.filter(st => st.STORE_TIER === tier);
-  const tierAvg    = tierStores.reduce((sum, st) => sum + (parseFloat(st.AMT_90D) || 0), 0) / (tierStores.length || 1);
-  const thisRev    = parseFloat(s.AMT_90D) || 0;
-  const tierColor  = TIER_COLORS[tier] || '#6b7280';
+  const thisRev = parseFloat(s.AMT_90D) || 0;
 
+  // Fix 1 — This Store = #3d5a80, Tier Average = #93b4d4
   storeViewCharts.compare = new Chart(ctx.getContext('2d'), {
     type: 'bar',
     data: {
       labels: ['This Store', 'Tier Average'],
       datasets: [{
         data: [thisRev, tierAvg],
-        backgroundColor: [tierColor, '#d1d5db'],
-        borderColor: [tierColor, '#9ca3af'],
+        backgroundColor: ['#3d5a80', '#93b4d4'],
+        borderColor:     ['#2d4a6e', '#7a9ab8'],
         borderWidth: 1,
         borderRadius: 4
       }]
@@ -439,7 +565,7 @@ function renderStoreDetailChart(s, tier) {
       },
       scales: {
         x: {
-          ticks: { font: { size: 12, family: 'Inter, sans-serif' }, color: '#374151' },
+          ticks: { font: { size: 12, family: 'Inter, sans-serif' }, color: '#000' },
           grid: { display: false }
         },
         y: {
