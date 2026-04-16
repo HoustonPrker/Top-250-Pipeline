@@ -1,3 +1,9 @@
 # Generated nightly by scripts/export_data.py — do not commit
 data/CK_math_pipeline_data.csv
 data/CK_daily_sales.csv
+
+# Dependencies & secrets
+node_modules/
+.env
+logs/
+scripts/__pycache__/
