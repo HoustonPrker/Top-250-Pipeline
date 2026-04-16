@@ -211,7 +211,7 @@ function renderCatCharts(catList) {
     const top8    = sorted.slice(0, 8);
     const others  = sorted.slice(8);
     const otherRev = others.reduce((s, c) => s + c.rev, 0);
-    const palette  = ['#1a3550','#2d4a6e','#3d5a80','#4e6e96','#6b8aad','#8aa4c4','#9bb5d0','#b8cfe0','#d1d5db'];
+    const palette  = ['#0d9488','#7c3aed','#d97706','#dc2626','#059669','#db2777','#2563eb','#ea580c','#6b7280'];
 
     const labels = [...top8.map(c => c.name), ...(others.length ? [`Other (${others.length})`] : [])];
     const data   = [...top8.map(c => c.rev),  ...(others.length ? [otherRev] : [])];

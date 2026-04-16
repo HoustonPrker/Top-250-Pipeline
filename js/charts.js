@@ -3,9 +3,107 @@
 // Uses globals: activeCharts, pipelineData
 // ============================================================
 
+let _trendView    = 'daily'; // 'daily' | 'weekly'
+let _lastTrendItem = null;   // item object saved for re-render on toggle
+
 function destroyCharts() {
   Object.values(activeCharts).forEach(c => { try { c.destroy(); } catch (_) {} });
   activeCharts = {};
+}
+
+function setTrendView(view) {
+  _trendView = view;
+  document.querySelectorAll('.trend-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById(`trend-btn-${view}`);
+  if (btn) btn.classList.add('active');
+  if (_lastTrendItem) renderTrendChart(_lastTrendItem);
+}
+
+function aggregateWeekly(daily) {
+  // Group daily data into calendar weeks (Mon–Sun), summing qty and amt
+  const weeks = {};
+  daily.labels.forEach((lbl, i) => {
+    const d   = new Date(lbl);
+    const day = d.getDay();
+    const diff = (day === 0 ? -6 : 1 - day);
+    const mon = new Date(d);
+    mon.setDate(d.getDate() + diff);
+    const key = mon.toISOString().slice(0, 10);
+    if (!weeks[key]) weeks[key] = { qty: 0, amt: 0 };
+    weeks[key].qty += daily.qty[i];
+    weeks[key].amt += daily.amt[i];
+  });
+  const keys = Object.keys(weeks).sort();
+  return {
+    labels: keys.map(k => {
+      const d = new Date(k + 'T00:00:00');
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }),
+    qty: keys.map(k => weeks[k].qty),
+    amt: keys.map(k => weeks[k].amt),
+  };
+}
+
+function renderTrendChart(item) {
+  _lastTrendItem = item;
+  const daily  = getDailySalesForItem(item.ITEM_NO);
+  const isWeek = _trendView === 'weekly';
+  const data   = isWeek ? aggregateWeekly(daily) : daily;
+
+  // Destroy existing trend chart only
+  if (activeCharts.trend) { try { activeCharts.trend.destroy(); } catch (_) {} delete activeCharts.trend; }
+
+  const trendEl = document.getElementById('chart-trend');
+  if (!trendEl) return;
+
+  if (daily.qty.every(v => v === 0)) {
+    trendEl.style.display = 'none';
+    // Remove old message if present
+    const old = trendEl.parentNode.querySelector('.no-data-msg');
+    if (old) old.remove();
+    const msg = document.createElement('div');
+    msg.className = 'no-data-msg';
+    msg.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af;font-size:13px';
+    msg.textContent = 'No daily sales data available for this item.';
+    trendEl.parentNode.appendChild(msg);
+    return;
+  }
+
+  trendEl.style.display = '';
+  const old = trendEl.parentNode.querySelector('.no-data-msg');
+  if (old) old.remove();
+
+  activeCharts.trend = new Chart(trendEl.getContext('2d'), {
+    type: isWeek ? 'bar' : 'line',
+    data: {
+      labels: data.labels,
+      datasets: [{
+        data: data.qty,
+        borderColor: '#0d9488',
+        backgroundColor: 'rgba(13,148,136,0.08)',
+        borderWidth: isWeek ? 1.5 : 1.5,
+        fill: true,
+        tension: 0.1,
+        pointRadius: 0,
+        pointHoverRadius: 3,
+        borderRadius: 0,
+      }]
+    },
+    options: {
+      ...baseOpts,
+      scales: {
+        x: {
+          ticks: { font: { size: 9, family: 'SF Mono, monospace' }, maxTicksLimit: isWeek ? 13 : 13, maxRotation: 0 },
+          grid: { color: 'rgba(0,0,0,0.04)' }
+        },
+        y: {
+          ticks: { font: { size: 9, family: 'SF Mono, monospace' }, maxTicksLimit: 5 },
+          grid: { color: 'rgba(0,0,0,0.04)' },
+          beginAtZero: true
+        }
+      }
+    }
+  });
 }
 
 const baseOpts = {
@@ -30,47 +128,8 @@ function renderCharts(item, qty90) {
   const stksOut  = Math.max(0, maxStores - stksW);
   const expected = qty12m / 4;
 
-  // ── 1. 90-Day Trend Line (real daily data) ───────────────────
-  const trendEl = document.getElementById('chart-trend');
-  const daily   = getDailySalesForItem(item.ITEM_NO);
-
-  if (daily.qty.every(v => v === 0)) {
-    // No data — show message instead of chart
-    trendEl.style.display = 'none';
-    const msg = document.createElement('div');
-    msg.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af;font-size:13px';
-    msg.textContent = 'No daily sales data available for this item.';
-    trendEl.parentNode.appendChild(msg);
-  } else {
-    trendEl.style.display = '';
-    activeCharts.trend = new Chart(trendEl.getContext('2d'), {
-      type: 'line',
-      data: {
-        labels: daily.labels,
-        datasets: [{
-          data: daily.qty,
-          borderColor: '#3d5a80',
-          backgroundColor: 'rgba(61,90,128,0.08)',
-          borderWidth: 1.5, fill: true,
-          tension: 0.1, pointRadius: 0, pointHoverRadius: 3
-        }]
-      },
-      options: {
-        ...baseOpts,
-        scales: {
-          x: {
-            ticks: { font: { size: 9, family: 'SF Mono, monospace' }, maxTicksLimit: 13, maxRotation: 0 },
-            grid: { color: 'rgba(0,0,0,0.04)' }
-          },
-          y: {
-            ticks: { font: { size: 9, family: 'SF Mono, monospace' }, maxTicksLimit: 5 },
-            grid: { color: 'rgba(0,0,0,0.04)' },
-            beginAtZero: true
-          }
-        }
-      }
-    });
-  }
+  // ── 1. 90-Day Trend (daily or weekly) ───────────────────────
+  renderTrendChart(item);
 
   // ── 2. Store Stock Doughnut ──────────────────────────────────
   const centerText = {
@@ -101,7 +160,7 @@ function renderCharts(item, qty90) {
       labels: [`With Stock (${stksW})`, `Without Stock (${stksOut})`],
       datasets: [{
         data: [stksW, stksOut],
-        backgroundColor: ['#3d5a80', '#d1d5db'],
+        backgroundColor: ['#0d9488', '#d1d5db'],
         borderColor: ['#fff', '#fff'],
         borderWidth: 2
       }]
@@ -121,7 +180,7 @@ function renderCharts(item, qty90) {
   });
 
   // ── 3. Actual vs Expected Bar ────────────────────────────────
-  const velColor = qty90 >= expected ? '#3d5a80' : '#dc2626';
+  const velColor = qty90 >= expected ? '#0d9488' : '#dc2626';
   activeCharts.compare = new Chart(
     document.getElementById('chart-compare').getContext('2d'), {
     type: 'bar',
@@ -130,7 +189,7 @@ function renderCharts(item, qty90) {
       datasets: [{
         data: [qty90, Math.round(expected)],
         backgroundColor: [velColor, '#d1d5db'],
-        borderColor: [velColor === '#3d5a80' ? '#2d4a6e' : '#991b1b', '#9ca3af'],
+        borderColor: [velColor === '#0d9488' ? '#0f766e' : '#991b1b', '#9ca3af'],
         borderWidth: 1
       }]
     },

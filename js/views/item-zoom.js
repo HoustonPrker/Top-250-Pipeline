@@ -171,25 +171,31 @@ function renderItem(item) {
   aggRow.className = 'agg-row';
   aggRow.innerHTML = `
     <td>ALL STORES (Aggregate)</td>
-    <td class="num-ctr" style="color:#000">${fmtQty(qty30)}<br><span style="font-size:11px;color:#6b7280">${fmt$(amt30)}</span></td>
-    <td class="num-ctr" style="color:#000">${fmtQty(qty90)}<br><span style="font-size:11px;color:#6b7280">${fmt$(amt90)}</span></td>
-    <td class="num-ctr">${item.STATUS || '—'}</td>`;
+    <td class="num-ctr" style="color:#000">${fmtQty(qty30)}</td>
+    <td class="num-ctr" style="color:#000">${fmt$(amt30)}</td>
+    <td class="num-ctr" style="color:#000">${fmtQty(qty90)}</td>
+    <td class="num-ctr" style="color:#000">${fmt$(amt90)}</td>
+    <td class="num-ctr">${fmtQty(item.QTY_AVAIL_ALL_STORES)}</td>
+    <td class="num-ctr">—</td>
+    <td class="num-ctr">—</td>`;
 
   // Loading placeholder while store sales fetch
   const loadRow = tbody.insertRow();
-  loadRow.innerHTML = `<td colspan="4" style="color:#9ca3af;font-size:12px;padding:10px 12px">Loading per-store sales...</td>`;
+  loadRow.innerHTML = `<td colspan="8" style="color:#9ca3af;font-size:12px;padding:10px 12px">Loading per-store sales...</td>`;
 
-  // Fetch per-store 30D/90D sales from proxy
+  // Fetch per-store sales and inventory in parallel
   const BASE = `${window.location.protocol}//${window.location.hostname}:3001/proxy`;
-  fetch(`${BASE}/item/${encodeURIComponent(item.ITEM_NO)}/store-sales`)
-    .then(r => r.ok ? r.json() : [])
-    .then(storeSales => {
+  Promise.all([
+    fetch(`${BASE}/item/${encodeURIComponent(item.ITEM_NO)}/store-sales`).then(r => r.ok ? r.json() : []),
+    fetch(`${BASE}/item/${encodeURIComponent(item.ITEM_NO)}/inventory`).then(r => r.ok ? r.json() : []),
+  ]).then(([storeSales, inventory]) => {
       loadRow.remove();
       if (!storeSales.length) {
         const nr = tbody.insertRow();
-        nr.innerHTML = `<td colspan="4" style="color:#9ca3af;font-size:12px;padding:10px 12px">No per-store sales data in the last 90 days.</td>`;
+        nr.innerHTML = `<td colspan="8" style="color:#9ca3af;font-size:12px;padding:10px 12px">No per-store sales data in the last 90 days.</td>`;
         return;
       }
+
       // Build store name lookup from storeData global
       const storeNames = {};
       (storeData || []).forEach(s => {
@@ -197,17 +203,33 @@ function renderItem(item) {
         storeNames[id] = s.STR_NAM || s.STORE_NAME || s.storeName || s.descr || id;
       });
 
+      // Build per-store inventory lookup
+      const invByStore = {};
+      (Array.isArray(inventory) ? inventory : (inventory.data || [])).forEach(r => {
+        const sid = String(r.storeId || r.StoreId || r.STORE_ID || '').trim();
+        if (sid) invByStore[sid] = {
+          qtyAvail:    parseFloat(r.qtyAvailable  || r.QTY_AVAILABLE  || 0),
+          markdownQty: parseFloat(r.markdownQty   || r.MARKDOWN_QTY   || r.clearanceQty || 0) || null,
+          expiredQty:  parseFloat(r.expiredQty    || r.EXPIRED_QTY    || r.mosQty       || 0) || null,
+        };
+      });
+
       storeSales.forEach(s => {
         const name = storeNames[s.storeId] || '';
+        const inv  = invByStore[s.storeId] || {};
         const row  = tbody.insertRow();
         row.innerHTML = `
           <td><span style="font-family:monospace;font-weight:700;color:#3d5a80;margin-right:6px">#${s.storeId}</span>${name}</td>
-          <td class="num-ctr" style="color:#000">${fmtQty(s.qty30)}<br><span style="font-size:11px;color:#6b7280">${fmt$(s.amt30)}</span></td>
-          <td class="num-ctr" style="color:#000">${fmtQty(s.qty90)}<br><span style="font-size:11px;color:#6b7280">${fmt$(s.amt90)}</span></td>
-          <td class="num-ctr">—</td>`;
+          <td class="num-ctr" style="color:#000">${fmtQty(s.qty30)}</td>
+          <td class="num-ctr" style="color:#000">${fmt$(s.amt30)}</td>
+          <td class="num-ctr" style="color:#000">${fmtQty(s.qty90)}</td>
+          <td class="num-ctr" style="color:#000">${fmt$(s.amt90)}</td>
+          <td class="num-ctr" style="color:#000">${inv.qtyAvail != null ? fmtQty(inv.qtyAvail) : '—'}</td>
+          <td class="num-ctr">${inv.markdownQty != null ? fmtQty(inv.markdownQty) : '—'}</td>
+          <td class="num-ctr">${inv.expiredQty  != null ? fmtQty(inv.expiredQty)  : '—'}</td>`;
       });
     })
     .catch(() => {
-      loadRow.innerHTML = `<td colspan="4" style="color:#9ca3af;font-size:12px;padding:10px 12px">Could not load per-store sales.</td>`;
+      loadRow.innerHTML = `<td colspan="8" style="color:#9ca3af;font-size:12px;padding:10px 12px">Could not load per-store sales.</td>`;
     });
 }

@@ -112,24 +112,47 @@
       color: #64748b;
       text-align: center;
     }
-    /* ── Nav search button ──────────────────────────────────────── */
-    .nav-search-btn {
-      background: #1e293b;
-      border: 1px solid #334155;
+    /* ── Trend view toggle ──────────────────────────────────────── */
+    .trend-toggle {
+      display: flex;
+      gap: 0;
+      border: 1px solid #e2e8f0;
       border-radius: 6px;
-      color: #94a3b8;
+      overflow: hidden;
+    }
+    .trend-btn {
+      background: #fff;
+      border: none;
+      color: #6b7280;
       cursor: pointer;
-      font-size: 16px;
-      height: 32px;
-      width: 32px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      padding: 3px 10px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .trend-btn + .trend-btn { border-left: 1px solid #e2e8f0; }
+    .trend-btn.active { background: #0d9488; color: #fff; }
+    .trend-btn:not(.active):hover { background: #f1f5f9; color: #374151; }
+    /* ── Nav search wrap ────────────────────────────────────────── */
+    .nav-search-wrap {
+      position: relative;
       display: flex;
       align-items: center;
-      justify-content: center;
-      margin-right: 10px;
-      transition: border-color 0.15s, color 0.15s;
-      flex-shrink: 0;
     }
-    .nav-search-btn:hover { border-color: #3b82f6; color: #e2e8f0; }
+    .nav-search-icon {
+      position: absolute;
+      left: 9px;
+      width: 15px;
+      height: 15px;
+      color: #94a3b8;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: color 0.15s;
+      pointer-events: all;
+    }
+    .nav-search-icon:hover { color: #e2e8f0; }
+    .nav-search-wrap .nav-search-input { padding-left: 30px; }
   </style>
 </head>
 <body>
@@ -141,9 +164,13 @@
     <span class="nav-title">CK Analytics</span>
   </div>
   <div class="nav-center">
-    <button class="nav-search-btn" onclick="openSearchModal()" title="Search items">&#128269;</button>
-    <input type="text" id="item-search" class="nav-search-input"
-           placeholder="Item #" maxlength="30" autocomplete="off">
+    <div class="nav-search-wrap">
+      <svg class="nav-search-icon" onclick="openSearchModal()" title="Search by name" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+        <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/>
+      </svg>
+      <input type="text" id="item-search" class="nav-search-input"
+             placeholder="Item #" maxlength="30" autocomplete="off">
+    </div>
     <button class="btn btn-primary btn-sm" onclick="doSearch()">Search</button>
     <button class="btn btn-ghost btn-sm" onclick="clearView()">Clear</button>
   </div>
@@ -270,7 +297,13 @@
       <!-- Charts -->
       <div class="charts-row">
         <div class="chart-panel">
-          <div class="chart-title">90-Day Sales Trend</div>
+          <div class="chart-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>90-Day Sales Trend</span>
+            <div class="trend-toggle">
+              <button id="trend-btn-daily"  class="trend-btn active" onclick="setTrendView('daily')">Daily</button>
+              <button id="trend-btn-weekly" class="trend-btn"        onclick="setTrendView('weekly')">Weekly</button>
+            </div>
+          </div>
           <div class="chart-container"><canvas id="chart-trend"></canvas></div>
         </div>
         <div class="chart-panel">
@@ -293,8 +326,12 @@
               <tr>
                 <th>Store</th>
                 <th class="num-ctr">30D Sales</th>
+                <th class="num-ctr">30D Revenue</th>
                 <th class="num-ctr">90D Sales</th>
-                <th class="num-ctr">Status</th>
+                <th class="num-ctr">90D Revenue</th>
+                <th class="num-ctr">Qty Available</th>
+                <th class="num-ctr">Clearance 30D</th>
+                <th class="num-ctr">MOS 30D</th>
               </tr>
             </thead>
             <tbody id="inv-body"></tbody>

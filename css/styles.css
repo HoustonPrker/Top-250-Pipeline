@@ -171,8 +171,8 @@ input[type=file] { width: 100%; font-family: inherit; font-size: 13px; border: 1
 
 /* ── DATA TABLE ──────────────────────────── */
 .inv-wrap   { overflow-x: auto; border-radius: 6px; overflow: hidden; }
-.data-table { width: 100%; border-collapse: collapse; font-size: 14px; background: #fff; }
-.data-table th { background: #3d5a80; color: #fff; padding: 11px 14px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; border-right: 1px solid rgba(255,255,255,0.1); white-space: nowrap; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 15px; background: #fff; }
+.data-table th { background: #3d5a80; color: #fff; padding: 11px 14px; text-align: left; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; border-right: 1px solid rgba(255,255,255,0.1); white-space: nowrap; }
 .data-table td { padding: 14px 14px; border-bottom: 1px solid #e5e7eb; border-right: 1px solid #f3f4f6; white-space: nowrap; color: #1a2332; }
 .data-table tr:nth-child(even) td { background: #f8f9fb; }
 
@@ -180,7 +180,7 @@ input[type=file] { width: 100%; font-family: inherit; font-size: 13px; border: 1
 .cat-name-cell { min-width: 180px; font-size: 15px; font-weight: 600; }
 .cat-top5 > td:first-child { border-left: 3px solid #3d5a80; padding-left: 11px; }
 .cat-group-end td { border-bottom: 2px solid #d1d5db; }
-.data-table td { font-size: 14px; }
+.data-table td { font-size: 15px; }
 .data-table tr.agg-row td { background: #eef2f7; font-weight: 600; }
 .data-table tr.note-row td { font-size: 13px; color: #9ca3af; font-style: italic; background: #fff !important; }
 .data-table tbody tr:hover td { background: #f0f4f8 !important; cursor: pointer; }
@@ -292,8 +292,9 @@ th.sort-th.sort-active .sort-icon { opacity: 1; }
 
 /* ── STORE TIER BADGES ────────────────────── */
 .tier-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; text-transform: uppercase; white-space: nowrap; color: #fff; }
-.tier-high   { background: #16a34a; }
-.tier-medium { background: #3d5a80; }
+.tier-elite  { background: linear-gradient(90deg, #7c3aed, #a855f7); }
+.tier-high   { background: #059669; }
+.tier-medium { background: #d97706; }
 .tier-low    { background: #6b7280; }
 
 /* ── TIER FILTER BAR ──────────────────────── */
