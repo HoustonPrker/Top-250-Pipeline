@@ -29,12 +29,11 @@ async function loadData() {
   setLoadProgress(0);
 
   try {
-    // Fetch rankings, store data, and daily sales in parallel
+    // Fetch rankings and store data at boot — daily sales loaded on demand per item
     setLoadMsg('Loading data from proxy...');
-    const [rankingsResp, storeDataResp, dailySalesResp] = await Promise.all([
+    const [rankingsResp, storeDataResp] = await Promise.all([
       fetch(`${BASE}/rankings`),
       fetch(`${BASE}/store-data`),
-      fetch(`${BASE}/daily-sales`),
     ]);
 
     if (!rankingsResp.ok) throw new Error('Could not load rankings from proxy. Is node proxy.js running?');
@@ -42,10 +41,9 @@ async function loadData() {
 
     setLoadProgress(40);
 
-    const [rankingsRaw, storeDataRaw, dailySalesRaw] = await Promise.all([
+    const [rankingsRaw, storeDataRaw] = await Promise.all([
       rankingsResp.json(),
       storeDataResp.json(),
-      dailySalesResp.ok ? dailySalesResp.json() : Promise.resolve([]),
     ]);
 
     setLoadProgress(70);
@@ -89,14 +87,8 @@ async function loadData() {
     // Populate storeData — used by store view (legacy CSV with tier/revenue fields)
     storeData = storeDataRaw;
 
-    // Build dailySalesIndex keyed by ITEM_NO — used by getDailySalesForItem() in utils.js
+    // dailySalesIndex populated on demand in loadItemData() — not pre-loaded at boot
     dailySalesIndex = {};
-    dailySalesData  = dailySalesRaw;
-    dailySalesRaw.forEach(row => {
-      const key = (row.ITEM_NO || '').trim();
-      if (!dailySalesIndex[key]) dailySalesIndex[key] = [];
-      dailySalesIndex[key].push(row);
-    });
 
     setLoadProgress(100);
     dataReady = true;
@@ -126,18 +118,22 @@ async function loadData() {
   }
 }
 
-// ── Item Zoom data (per search, augments live API data) ───────
-// Called optionally to get live inventory; daily sales already loaded at boot.
+// ── Item Zoom data (per search) ───────────────────────────────
+// Fetches live inventory + daily sales on demand for the searched item.
 
 async function loadItemData(itemNo) {
-  const enc = encodeURIComponent((itemNo || '').trim());
-  const [itemResp, invResp] = await Promise.all([
+  const key = (itemNo || '').trim();
+  const enc = encodeURIComponent(key);
+
+  const [itemResp, invResp, dailyResp] = await Promise.all([
     fetch(`${BASE}/item/${enc}`),
     fetch(`${BASE}/item/${enc}/inventory`),
+    fetch(`${BASE}/item/${enc}/daily-sales`),
   ]);
 
-  const item      = itemResp.ok ? await itemResp.json() : {};
-  const inventory = invResp.ok  ? await invResp.json()  : [];
+  const item      = itemResp.ok  ? await itemResp.json()  : {};
+  const inventory = invResp.ok   ? await invResp.json()   : [];
+  const dailyRaw  = dailyResp.ok ? await dailyResp.json() : [];
 
   const itemData = item.data || item;
   const inv      = Array.isArray(inventory) ? inventory : (inventory.data || []);
@@ -145,6 +141,10 @@ async function loadItemData(itemNo) {
   const qtyAvail        = inv.reduce((s, r) => s + (parseFloat(r.qtyAvailable || r.QTY_AVAILABLE) || 0), 0);
   const qtyOH           = inv.reduce((s, r) => s + (parseFloat(r.qtyOnHand    || r.QTY_ON_HAND)   || 0), 0);
   const storesWithStock = inv.filter(r => (parseFloat(r.qtyAvailable || r.QTY_AVAILABLE) || 0) > 0).length;
+
+  // Populate dailySalesIndex for this item so getDailySalesForItem() works
+  const rows = Array.isArray(dailyRaw) ? dailyRaw : (dailyRaw.data || []);
+  dailySalesIndex[key] = rows;
 
   return {
     QTY_AVAIL_ALL_STORES:  qtyAvail,

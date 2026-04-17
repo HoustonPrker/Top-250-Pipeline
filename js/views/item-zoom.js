@@ -3,7 +3,7 @@
 // Uses globals: pipelineData, normalityMap, dataReady, activeCharts
 // ============================================================
 
-function doSearch(prefill) {
+async function doSearch(prefill) {
   if (prefill !== undefined) document.getElementById('item-search').value = prefill;
   const q = document.getElementById('item-search').value.trim().toUpperCase();
   if (!q) return;
@@ -21,6 +21,18 @@ function doSearch(prefill) {
       `No item found for item number "${q}". Check the number and try again.`;
     show('error-view');
     return;
+  }
+
+  // Fetch daily sales on demand before rendering charts
+  if (!dailySalesIndex[item.ITEM_NO]) {
+    try {
+      const BASE_D = `${window.location.protocol}//${window.location.hostname}:3001/proxy`;
+      const resp   = await fetch(`${BASE_D}/item/${encodeURIComponent(item.ITEM_NO)}/daily-sales`);
+      const rows   = resp.ok ? await resp.json() : [];
+      dailySalesIndex[item.ITEM_NO] = Array.isArray(rows) ? rows : (rows.data || []);
+    } catch (_) {
+      dailySalesIndex[item.ITEM_NO] = [];
+    }
   }
 
   renderItem(item);
