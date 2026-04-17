@@ -271,14 +271,14 @@ def phase2(session, items):
     daily_rows = []
     for (item_no, bus_dat), vals in sorted(daily_sales.items()):
         daily_rows.append({
-            "ITEM_NO":    item_no,
-            "BUS_DAT":    bus_dat,
-            "UNITS_SOLD": vals["UNITS_SOLD"],
-            "REVENUE":    round(vals["REVENUE"], 4),
+            "ITEM_NO":   item_no,
+            "POST_DATE": bus_dat,
+            "QTY_SOLD":  vals["UNITS_SOLD"],
+            "EXT_PRC":   round(vals["REVENUE"], 4),
         })
     write_csv(
         os.path.join(DATA_DIR, "CK_daily_sales_new.csv"),
-        ["ITEM_NO", "BUS_DAT", "UNITS_SOLD", "REVENUE"],
+        ["ITEM_NO", "POST_DATE", "QTY_SOLD", "EXT_PRC"],
         daily_rows,
     )
 
