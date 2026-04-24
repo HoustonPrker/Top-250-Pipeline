@@ -15,7 +15,7 @@ REQUIRED_COLUMNS = {
         "ITEM_NO", "STR_ID", "QTY_ON_HAND", "QTY_AVAILABLE",
     ],
     "CK_daily_sales_new.csv": [
-        "ITEM_NO", "BUS_DAT", "UNITS_SOLD", "REVENUE",
+        "ITEM_NO", "POST_DATE", "QTY_SOLD", "EXT_PRC",
     ],
 }
 

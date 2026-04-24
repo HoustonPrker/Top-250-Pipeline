@@ -26,6 +26,7 @@ ARCH_DIR = os.path.join(DATA_DIR, "archive")
 MIN_ROWS = {
     "CK_math_pipeline_data_new.csv": 500,
     "CK_daily_sales_new.csv":        5000,
+    "CK_store_data_new.csv":         10,
 }
 
 
@@ -188,9 +189,12 @@ def phase2(session, items):
     valid_items = {str(it["itemNo"]).strip() for it in items}
 
     # Aggregation structures
-    sales_agg   = {}
-    store_sales = defaultdict(lambda: defaultdict(
+    sales_agg      = {}
+    store_sales    = defaultdict(lambda: defaultdict(
         lambda: {"UNITS_SOLD_30D": 0, "REV_30D": 0.0}
+    ))
+    store_sales_90d = defaultdict(lambda: defaultdict(
+        lambda: {"UNITS_SOLD_90D": 0, "REV_90D": 0.0}
     ))
     daily_sales = defaultdict(lambda: {"UNITS_SOLD": 0, "REVENUE": 0.0})
 
@@ -203,6 +207,9 @@ def phase2(session, items):
         ag = sales_agg[item_no]
         ag["SALES_90D"] += quantity
         ag["REV_90D"]   += ext_price
+        # Always accumulate 90D store data
+        store_sales_90d[item_no][sid]["UNITS_SOLD_90D"] += quantity
+        store_sales_90d[item_no][sid]["REV_90D"]        += ext_price
         if dat >= date_30:
             ag["SALES_30D"] += quantity
             ag["REV_30D"]   += ext_price
@@ -221,9 +228,24 @@ def phase2(session, items):
         f"&pageSize=200"
         f"&fields=itemNo,storeId,quantity,extPrice,businessDate"
     )
-    page = 1
+    page        = 1
+    total_pages = None
     total_records = 0
     skipped = 0
+    phase2_start = time.time()
+
+    def _progress_bar(current, total, elapsed):
+        pct   = current / total if total else 0
+        filled = int(40 * pct)
+        bar   = "█" * filled + "░" * (40 - filled)
+        eta   = ""
+        if pct > 0:
+            remaining = elapsed / pct * (1 - pct)
+            m, s = divmod(int(remaining), 60)
+            eta = f"  ETA {m}m{s:02d}s"
+        elapsed_str = f"{int(elapsed//60)}m{int(elapsed%60):02d}s"
+        print(f"\r  [{bar}] {pct*100:5.1f}%  page {current}/{total}  elapsed {elapsed_str}{eta}",
+              end="", flush=True)
 
     while True:
         resp = None
@@ -243,6 +265,8 @@ def phase2(session, items):
         body = resp.json()
         records  = body.get("data", [])
         has_next = body.get("hasNextPage", False)
+        if total_pages is None:
+            total_pages = body.get("totalPages") or 0
         if not isinstance(records, list):
             records = []
 
@@ -260,10 +284,11 @@ def phase2(session, items):
             _accumulate(item_no, quantity, ext_price, dat, sid)
             total_records += 1
 
-        if page % 50 == 0:
-            log(f"Phase 2 — Progress: page {page}, {total_records} records accumulated")
+        if total_pages:
+            _progress_bar(page, total_pages, time.time() - phase2_start)
 
         if not has_next:
+            print()  # newline after progress bar
             break
         page += 1
 
@@ -283,7 +308,7 @@ def phase2(session, items):
     )
 
     log(f"Phase 2 — Sales complete. {page} pages, {total_records} records, {skipped} skipped")
-    return sales_agg, store_sales
+    return sales_agg, store_sales, store_sales_90d
 
 
 # ================================================================== #
@@ -318,6 +343,93 @@ def phase4(items, sales_agg):
 
 
 # ================================================================== #
+# Phase 5a — Build CK_store_data.csv from pipeline data               #
+# ================================================================== #
+
+def phase5a(store_rows, items, sales_agg, store_sales_90d):
+    log("Phase 5a — Building store summary data ...")
+
+    # Build store aggregates from 90D per-store data
+    store_stats = {}
+
+    for item_no, stores in store_sales_90d.items():
+        item_meta = next((i for i in items if i["itemNo"] == item_no), None)
+        for sid, vals in stores.items():
+            if sid not in store_stats:
+                store_stats[sid] = {
+                    "QTY_90D": 0, "REV_90D": 0.0,
+                    "UNIQUE_ITEMS_90D": 0,
+                    "CATEGORIES": set(),
+                }
+            ss = store_stats[sid]
+            ss["QTY_90D"] += vals["UNITS_SOLD_90D"]
+            ss["REV_90D"] += vals["REV_90D"]
+            if vals["UNITS_SOLD_90D"] > 0:
+                ss["UNIQUE_ITEMS_90D"] += 1
+            if item_meta:
+                ss["CATEGORIES"].add(item_meta.get("categoryCode", ""))
+
+    total_90d_rev = sum(agg.get("REV_90D", 0) for agg in sales_agg.values())
+
+    store_data_rows = []
+    for s in store_rows:
+        str_id  = str(s.get("STR_ID", "")).strip()
+        str_nam = s.get("STR_NAM", "")
+        stats   = store_stats.get(str_id, {})
+
+        qty_90d  = round(stats.get("QTY_90D", 0))
+        rev_90d  = round(stats.get("REV_90D", 0.0), 2)
+        unique   = stats.get("UNIQUE_ITEMS_90D", 0)
+        cats     = len(stats.get("CATEGORIES", set()))
+        annual   = round(rev_90d * 4, 2)
+        pct      = round(rev_90d / total_90d_rev * 100, 1) if total_90d_rev > 0 else 0
+
+        store_data_rows.append({
+            "STR_ID":           str_id,
+            "STORE_NAME":       str_nam,
+            "CITY":             s.get("city",  s.get("CITY",  "")),
+            "STATE":            s.get("state", s.get("STATE", "")),
+            "STORE_TIER":       "",   # backfilled below
+            "ANNUAL_REVENUE":   annual,
+            "QTY_90D":          qty_90d,
+            "AMT_90D":          rev_90d,
+            "TXN_90D":          0,    # not tracked in current pipeline
+            "UNIQUE_ITEMS_90D": unique,
+            "CATEGORIES_SOLD":  cats,
+            "PCT_RECENT":       pct,
+            "QTY_ON_HND":       0,    # requires inventory endpoint (503)
+            "QTY_AVAIL":        0,
+            "ITEMS_STOCKED":    0,
+        })
+
+    if store_rows:
+        log(f"Phase 5a — Sample store fields: {list(store_rows[0].keys())}")
+
+    # Backfill STORE_TIER — top third HIGH, middle MEDIUM, bottom LOW by AMT_90D
+    sorted_stores = sorted(store_data_rows, key=lambda x: x["AMT_90D"], reverse=True)
+    n = len(sorted_stores)
+    for rank, row in enumerate(sorted_stores):
+        frac = rank / n if n > 0 else 0
+        if frac < 1/3:
+            row["STORE_TIER"] = "HIGH"
+        elif frac < 2/3:
+            row["STORE_TIER"] = "MEDIUM"
+        else:
+            row["STORE_TIER"] = "LOW"
+
+    write_csv(
+        os.path.join(DATA_DIR, "CK_store_data_new.csv"),
+        ["STR_ID", "STORE_NAME", "CITY", "STATE", "STORE_TIER",
+         "ANNUAL_REVENUE", "QTY_90D", "AMT_90D", "TXN_90D",
+         "UNIQUE_ITEMS_90D", "CATEGORIES_SOLD", "PCT_RECENT",
+         "QTY_ON_HND", "QTY_AVAIL", "ITEMS_STOCKED"],
+        store_data_rows,
+    )
+    log(f"Phase 5a — Store data written. {len(store_data_rows)} stores.")
+    return store_data_rows
+
+
+# ================================================================== #
 # Phase 5 — Validate and promote                                      #
 # ================================================================== #
 
@@ -342,7 +454,8 @@ def phase5(store_rows):
         # Archive + promote
         promotions = {
             "CK_math_pipeline_data_new.csv": "CK_math_pipeline_data.csv",
-            "CK_daily_sales_new.csv":         "CK_daily_sales.csv",
+            "CK_daily_sales_new.csv":        "CK_daily_sales.csv",
+            "CK_store_data_new.csv":         "CK_store_data.csv",
         }
         os.makedirs(ARCH_DIR, exist_ok=True)
         for new_name, live_name in promotions.items():
@@ -382,9 +495,10 @@ def main():
 
     session = make_session()
 
-    store_rows, items      = phase1(session)
-    sales_agg, store_sales = phase2(session, items)
+    store_rows, items                       = phase1(session)
+    sales_agg, store_sales, store_sales_90d = phase2(session, items)
     phase4(items, sales_agg)
+    phase5a(store_rows, items, sales_agg, store_sales_90d)
     phase5(store_rows)
 
     elapsed = time.time() - t_start
